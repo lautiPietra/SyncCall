@@ -1,4 +1,27 @@
 import rateLimit from 'express-rate-limit';
+import type { Request } from 'express';
+import { verifyJwt } from '../features/auth/auth.service';
+
+/**
+ * Los límites "por usuario" deben contar por cuenta, no por IP: en dev, varias cuentas
+ * de prueba comparten la misma IP y se pisarían entre sí. Se decodifica el JWT directo
+ * de la cookie (sin ir a la base) porque estos limiters corren antes que requireAuth.
+ */
+function userOrIpKey(req: Request): string {
+  const token = req.cookies?.token as string | undefined;
+  if (token) {
+    try {
+      return verifyJwt(token).sub;
+    } catch {
+      // token inválido o vencido: cae al límite por IP
+    }
+  }
+  return req.ip ?? 'unknown';
+}
+
+function userKey(req: Request): string {
+  return req.user?._id.toString() ?? req.ip ?? 'unknown';
+}
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -12,6 +35,7 @@ export const apiLimiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: userOrIpKey,
 });
 
 export const searchLimiter = rateLimit({
@@ -19,6 +43,7 @@ export const searchLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: userKey,
 });
 
 export const friendRequestLimiter = rateLimit({
@@ -26,6 +51,7 @@ export const friendRequestLimiter = rateLimit({
   limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: userKey,
 });
 
 export const avatarLimiter = rateLimit({
@@ -33,4 +59,5 @@ export const avatarLimiter = rateLimit({
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: userKey,
 });

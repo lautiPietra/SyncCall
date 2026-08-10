@@ -17,6 +17,18 @@ export interface Friendship {
   createdAt: string;
 }
 
-export interface Friend extends PublicUser {
+export interface Friend {
   friendshipId: string;
+  user: PublicUser;
+}
+
+export interface FriendRequestPreview {
+  id: string;
+  user: PublicUser;
+  createdAt: string;
+}
+
+export interface FriendRequestsResponse {
+  incoming: FriendRequestPreview[];
+  outgoing: FriendRequestPreview[];
 }
