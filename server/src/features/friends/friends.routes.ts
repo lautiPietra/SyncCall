@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   friendRequestIdParamsSchema,
+  mutualFriendsParamsSchema,
   respondFriendRequestSchema,
   sendFriendRequestSchema,
 } from '@synccall/shared';
@@ -11,6 +12,7 @@ import { validate } from '../../middleware/validate.middleware';
 import {
   cancelRequest,
   listFriends,
+  listMutualFriends,
   listRequests,
   removeFriend,
   respondRequest,
@@ -43,4 +45,9 @@ export const friendsRouter = Router();
 friendsRouter.use(requireAuth);
 
 friendsRouter.get('/', asyncHandler(listFriends));
+friendsRouter.get(
+  '/mutual/:userId',
+  validate(mutualFriendsParamsSchema, 'params'),
+  asyncHandler(listMutualFriends),
+);
 friendsRouter.delete('/:id', validate(friendRequestIdParamsSchema, 'params'), asyncHandler(removeFriend));

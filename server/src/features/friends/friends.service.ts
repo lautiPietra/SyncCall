@@ -4,7 +4,8 @@ import { User } from '../users/users.model';
 import type { UserDocument } from '../users/users.types';
 import { ApiError } from '../../lib/ApiError';
 
-const PUBLIC_USER_FIELDS = 'username displayName avatarUrl avatarFrame accentColor status isOnline';
+export const PUBLIC_USER_FIELDS =
+  'username displayName avatarUrl avatarFrame accentColor status isOnline bio bannerUrl createdAt';
 
 export async function sendFriendRequest(fromId: string, toId: string) {
   if (fromId === toId) {
@@ -48,15 +49,16 @@ export async function respondFriendRequest(
   requestId: string,
   userId: string,
   status: 'accepted' | 'declined',
-): Promise<{ status: 'accepted' | 'declined' }> {
+): Promise<{ status: 'accepted' | 'declined'; fromUserId: string }> {
   const request = await FriendRequest.findOne({ _id: requestId, to: userId });
   if (!request) {
     throw new ApiError(404, 'Solicitud no encontrada');
   }
+  const fromUserId = request.from.toString();
 
   if (status === 'declined') {
     await request.deleteOne();
-    return { status: 'declined' };
+    return { status: 'declined', fromUserId };
   }
 
   const [userA, userB] = [request.from.toString(), request.to.toString()].sort();
@@ -68,7 +70,7 @@ export async function respondFriendRequest(
     }
   }
   await request.deleteOne();
-  return { status: 'accepted' };
+  return { status: 'accepted', fromUserId };
 }
 
 export async function cancelFriendRequest(requestId: string, userId: string): Promise<void> {
@@ -102,18 +104,53 @@ export async function listFriends(userId: string) {
 
   return friendships.map((f) => {
     const other = f.userA._id.toString() === userId ? f.userB : f.userA;
-    return { friendshipId: f._id.toString(), user: other };
+    return { friendshipId: f._id.toString(), user: other, friendsSince: f.createdAt.toISOString() };
   });
 }
 
-export async function removeFriend(userId: string, friendshipId: string): Promise<void> {
-  const result = await Friendship.deleteOne({
+export async function listMutualFriends(userId: string, otherUserId: string) {
+  const isFriend = await Friendship.exists({
+    $or: [
+      { userA: userId, userB: otherUserId },
+      { userA: otherUserId, userB: userId },
+    ],
+  });
+  if (!isFriend) {
+    throw new ApiError(403, 'Solo podés ver los amigos en común de tus propios amigos');
+  }
+
+  const [myFriendIds, theirFriendIds] = await Promise.all([getFriendIds(userId), getFriendIds(otherUserId)]);
+  const theirSet = new Set(theirFriendIds);
+  const mutualIds = myFriendIds.filter((id) => theirSet.has(id));
+
+  const friends =
+    mutualIds.length === 0 ? [] : await User.find({ _id: { $in: mutualIds } }).select(PUBLIC_USER_FIELDS);
+
+  return { friends, friendsCount: theirFriendIds.length };
+}
+
+export async function getFriendIds(userId: string): Promise<string[]> {
+  const friendships = await Friendship.find({ $or: [{ userA: userId }, { userB: userId }] }).select(
+    'userA userB',
+  );
+  return friendships.map((f) =>
+    f.userA.toString() === userId ? f.userB.toString() : f.userA.toString(),
+  );
+}
+
+export async function removeFriend(userId: string, friendshipId: string): Promise<{ otherUserId: string }> {
+  const friendship = await Friendship.findOne({
     _id: friendshipId,
     $or: [{ userA: userId }, { userB: userId }],
   });
-  if (result.deletedCount === 0) {
+  if (!friendship) {
     throw new ApiError(404, 'Amistad no encontrada');
   }
+
+  const otherUserId =
+    friendship.userA.toString() === userId ? friendship.userB.toString() : friendship.userA.toString();
+  await friendship.deleteOne();
+  return { otherUserId };
 }
 
 function isDuplicateKeyError(err: unknown): boolean {

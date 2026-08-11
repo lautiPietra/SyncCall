@@ -236,10 +236,11 @@ Todas las rutas HTTP y los eventos de socket que pueden ser abusados tienen lím
 | Zona | Límite propuesto | Motivo |
 |---|---|---|
 | `/auth/*` (login OAuth) | 10 intentos / 15 min por IP | Evitar abuso del flujo de login |
-| API general (`/api/*`) | 100 req / 15 min por usuario | Límite base contra scraping/abuso |
+| API general (`/api/*`) | 600 req / 15 min por usuario | Piso base contra scraping/abuso, no un throttle del uso normal (el chat por sí solo ya genera bastante tráfico legítimo de lectura) |
 | `POST /api/users/search` | 30 req / min por usuario | Evitar enumeración masiva de usuarios |
 | `POST /api/friend-requests` | 20 req / hora por usuario | Evitar spam de solicitudes de amistad |
 | `POST /api/me/avatar` | 10 req / hora por usuario | Subidas de imagen son costosas (Cloudinary) |
+| `POST /api/conversations/:id/media` | 30 req / hora por usuario | Subidas de imagen en el chat son costosas (Cloudinary) |
 | Evento de socket `dm:send` | ~1 mensaje / 300ms por usuario (burst corto permitido) | Evitar flood de mensajes en tiempo real |
 
 Al superar el límite, la API responde `429 Too Many Requests` (o el socket ignora/desconecta con warning), nunca falla en silencio ni cuelga el servidor.

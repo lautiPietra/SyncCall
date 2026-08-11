@@ -1,4 +1,4 @@
-import type { Friend, FriendRequestsResponse, PublicUser } from '@synccall/shared';
+import type { Friend, FriendRequestsResponse, MutualFriendsResponse, PublicUser } from '@synccall/shared';
 import { apiFetch } from '../../../lib/apiClient';
 
 export function searchUsers(q: string): Promise<{ users: PublicUser[] }> {
@@ -27,4 +27,8 @@ export function cancelFriendRequest(id: string): Promise<void> {
 
 export function removeFriend(friendshipId: string): Promise<void> {
   return apiFetch(`/friends/${friendshipId}`, { method: 'DELETE' });
+}
+
+export function listMutualFriends(userId: string): Promise<MutualFriendsResponse> {
+  return apiFetch(`/friends/mutual/${userId}`);
 }

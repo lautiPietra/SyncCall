@@ -5,6 +5,7 @@ import { AVATAR_FRAME_LABELS, FramedAvatar } from '../../../components/ui/Avatar
 import { Button } from '../../../components/ui/Button';
 import { Input, Textarea } from '../../../components/ui/Input';
 import { STATUS_LABELS, StatusDot } from '../../../components/ui/StatusDot';
+import { useFriends } from '../../../app/FriendsProvider';
 import { useProfile } from '../hooks/useProfile';
 
 const STATUSES: UserStatus[] = ['online', 'idle', 'dnd', 'invisible'];
@@ -18,6 +19,7 @@ const MEMBER_SINCE_FORMATTER = new Intl.DateTimeFormat('es-AR', {
 export function ProfilePage() {
   const { user, saving, uploadingAvatar, uploadingBanner, error, save, changeAvatar, changeBanner } =
     useProfile();
+  const { friends } = useFriends();
 
   const [username, setUsername] = useState(user?.username ?? '');
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
@@ -107,6 +109,10 @@ export function ProfilePage() {
               <p className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-text-disabled">
                 <CalendarIcon />
                 Miembro desde {MEMBER_SINCE_FORMATTER.format(new Date(user.createdAt))}
+              </p>
+              <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-text-disabled">
+                <FriendsGroupIcon />
+                {friends.length} {friends.length === 1 ? 'amigo' : 'amigos'}
               </p>
             </div>
             <label
@@ -254,6 +260,17 @@ function CalendarIcon() {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="5" width="18" height="16" rx="2" />
       <path d="M3 10h18M8 3v4M16 3v4" />
+    </svg>
+  );
+}
+
+function FriendsGroupIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+      <path d="M16 5.5a3.5 3.5 0 0 1 0 7" />
+      <path d="M15 13.2c2.9.4 5 2.1 5 6.8" />
     </svg>
   );
 }

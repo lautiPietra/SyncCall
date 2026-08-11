@@ -30,9 +30,17 @@ export const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+/**
+ * Piso general contra scraping/bots, no un throttle del uso normal: se aplica a TODA la
+ * API (app.use antes de montar los routers), incluyendo el historial de mensajes y la
+ * lista de conversaciones del chat, que de por sí generan bastante más tráfico legítimo
+ * de lectura que el resto de la app. Los endpoints con riesgo real de abuso (búsqueda,
+ * solicitudes de amistad, subida de avatar/imágenes) ya tienen su propio límite, más
+ * estricto, encima de este.
+ */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 100,
+  limit: 600,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: userOrIpKey,
@@ -57,6 +65,14 @@ export const friendRequestLimiter = rateLimit({
 export const avatarLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: userKey,
+});
+
+export const chatMediaLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: userKey,

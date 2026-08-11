@@ -4,7 +4,9 @@ export * from './types/conversation.types';
 export * from './types/message.types';
 
 export * from './socket/events';
+export * from './utils/status';
 
 export * from './validation/user.schema';
 export * from './validation/friend.schema';
 export * from './validation/message.schema';
+export * from './validation/conversation.schema';

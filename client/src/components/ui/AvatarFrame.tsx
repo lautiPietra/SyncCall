@@ -197,24 +197,29 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
     );
   }
 
-  // aurora — soft flowing blend, distinct from rainbow's hard rotating pie-slices
-  const outer = size + 14;
-  const auroraGradient =
-    'linear-gradient(120deg, #2DD4BF, #38BDF8, #7A5AF8, #4ADE80, #2DD4BF)';
-  return (
-    <div className="relative" style={{ width: outer, height: outer }}>
-      <div
-        className="animate-aurora-flow absolute inset-[-5px] rounded-full opacity-60 blur-md"
-        style={{ background: auroraGradient, backgroundSize: '300% 300%' }}
-      />
-      <div
-        className="animate-aurora-flow absolute inset-0 rounded-full"
-        style={{ background: auroraGradient, backgroundSize: '300% 300%' }}
-      />
-      <div className="absolute inset-[3px] rounded-full bg-card" />
-      <div className="absolute inset-[6px]">
-        <Avatar src={src} alt={alt} size={size} status={status} />
+  if (frame === 'aurora') {
+    const outer = size + 14;
+    const auroraGradient =
+      'linear-gradient(120deg, #2DD4BF, #38BDF8, #7A5AF8, #4ADE80, #2DD4BF)';
+    return (
+      <div className="relative" style={{ width: outer, height: outer }}>
+        <div
+          className="animate-aurora-flow absolute inset-[-5px] rounded-full opacity-60 blur-md"
+          style={{ background: auroraGradient, backgroundSize: '300% 300%' }}
+        />
+        <div
+          className="animate-aurora-flow absolute inset-0 rounded-full"
+          style={{ background: auroraGradient, backgroundSize: '300% 300%' }}
+        />
+        <div className="absolute inset-[3px] rounded-full bg-card" />
+        <div className="absolute inset-[6px]">
+          <Avatar src={src} alt={alt} size={size} status={status} />
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // Frame no reconocido o ausente (ej. un endpoint que no seleccionó avatarFrame): mejor
+  // mostrar el avatar sin marco que caer silenciosamente en el de aurora por defecto.
+  return <Avatar src={src} alt={alt} size={size} status={status} />;
 }

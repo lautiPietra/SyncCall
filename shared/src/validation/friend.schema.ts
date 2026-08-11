@@ -14,5 +14,9 @@ export const friendRequestIdParamsSchema = z.object({
   id: objectIdSchema,
 });
 
+export const mutualFriendsParamsSchema = z.object({
+  userId: objectIdSchema,
+});
+
 export type SendFriendRequestInput = z.infer<typeof sendFriendRequestSchema>;
 export type RespondFriendRequestInput = z.infer<typeof respondFriendRequestSchema>;

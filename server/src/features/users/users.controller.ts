@@ -1,9 +1,28 @@
 import type { Request, Response } from 'express';
-import type { UpdateProfileInput, SearchUsersQueryInput } from '@synccall/shared';
+import type { PublicUser, UpdateProfileInput, SearchUsersQueryInput } from '@synccall/shared';
 import type { UploadApiResponse } from 'cloudinary';
 import { User } from './users.model';
+import type { UserDocument } from './users.types';
 import { cloudinary } from '../../config/cloudinary';
 import { ApiError } from '../../lib/ApiError';
+import { broadcastProfileUpdate, broadcastStatusChange } from '../../sockets';
+import { PUBLIC_USER_FIELDS } from '../friends/friends.service';
+
+function toPublicUser(user: UserDocument): PublicUser {
+  return {
+    id: user._id.toString(),
+    username: user.username,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
+    bannerUrl: user.bannerUrl,
+    bio: user.bio,
+    accentColor: user.accentColor,
+    avatarFrame: user.avatarFrame,
+    status: user.status,
+    isOnline: user.isOnline,
+    createdAt: user.createdAt.toISOString(),
+  };
+}
 
 export async function updateMe(req: Request, res: Response): Promise<void> {
   const updates = req.body as UpdateProfileInput;
@@ -21,6 +40,14 @@ export async function updateMe(req: Request, res: Response): Promise<void> {
     throw err;
   }
 
+  if (user) {
+    if (updates.status) {
+      await broadcastStatusChange(user._id.toString(), user.status);
+    }
+    // Avatar, nombre, bio, marco, etc.: los amigos los tienen que ver sin recargar la página.
+    await broadcastProfileUpdate(user._id.toString(), toPublicUser(user));
+  }
+
   res.json({ user });
 }
 
@@ -35,7 +62,7 @@ export async function searchUsers(req: Request, res: Response): Promise<void> {
     username: { $regex: `^${escapeRegex(q)}`, $options: 'i' },
     _id: { $ne: req.user!._id },
   })
-    .select('username displayName avatarUrl accentColor status isOnline')
+    .select(PUBLIC_USER_FIELDS)
     .limit(20);
 
   res.json({ users });
@@ -99,6 +126,10 @@ async function uploadUserImage(
     } catch (err) {
       console.error(`No se pudo borrar ${options.errorLabel} de Cloudinary:`, err);
     }
+  }
+
+  if (user) {
+    await broadcastProfileUpdate(user._id.toString(), toPublicUser(user));
   }
 
   res.json({ user });

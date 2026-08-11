@@ -24,6 +24,10 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().min(1),
   CLOUDINARY_API_KEY: z.string().min(1),
   CLOUDINARY_API_SECRET: z.string().min(1),
+
+  MESSAGE_ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'Debe ser una clave hex de 32 bytes (64 caracteres)'),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -57,4 +61,5 @@ export const config = {
     apiKey: parsed.data.CLOUDINARY_API_KEY,
     apiSecret: parsed.data.CLOUDINARY_API_SECRET,
   },
+  messageEncryptionKey: Buffer.from(parsed.data.MESSAGE_ENCRYPTION_KEY, 'hex'),
 };

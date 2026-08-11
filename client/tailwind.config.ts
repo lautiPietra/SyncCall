@@ -85,6 +85,11 @@ export default {
           '0%, 100%': { backgroundPosition: '0% 50%' },
           '50%': { backgroundPosition: '100% 50%' },
         },
+        'badge-pop': {
+          '0%': { transform: 'scale(0)', opacity: '0' },
+          '60%': { transform: 'scale(1.3)', opacity: '1' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
       },
       animation: {
         'logo-pop': 'logo-pop 0.6s ease-out both',
@@ -99,6 +104,7 @@ export default {
         twinkle: 'twinkle 1.8s ease-in-out infinite',
         flicker: 'flicker 1.4s ease-in-out infinite',
         'aurora-flow': 'aurora-flow 5s ease-in-out infinite',
+        'badge-pop': 'badge-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both',
       },
     },
   },

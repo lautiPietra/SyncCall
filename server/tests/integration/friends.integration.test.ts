@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { User } from '../../src/features/users/users.model';
+import { Friendship } from '../../src/features/friends/friendship.model';
 import { issueJwt } from '../../src/features/auth/auth.service';
 
 const app = createApp();
@@ -187,6 +188,7 @@ describe('GET /api/friends y DELETE /api/friends/:id', () => {
     const listRes = await request(app).get('/api/friends').set(authed(tokenA));
     expect(listRes.body.friends).toHaveLength(1);
     expect(listRes.body.friends[0].user.username).toBe('amigob');
+    expect(listRes.body.friends[0].friendsSince).toBeTruthy();
 
     const friendshipId = listRes.body.friends[0].friendshipId;
     const deleteRes = await request(app).delete(`/api/friends/${friendshipId}`).set(authed(tokenA));
@@ -194,5 +196,38 @@ describe('GET /api/friends y DELETE /api/friends/:id', () => {
 
     const afterRes = await request(app).get('/api/friends').set(authed(tokenB));
     expect(afterRes.body.friends).toHaveLength(0);
+  });
+});
+
+describe('GET /api/friends/mutual/:userId', () => {
+  async function makeFriends(userAId: string, userBId: string): Promise<void> {
+    const [userA, userB] = [userAId, userBId].sort();
+    await Friendship.create({ userA, userB });
+  }
+
+  it('devuelve los amigos en común entre vos y otro amigo tuyo', async () => {
+    const { token: tokenB, user: userB } = await createTestUser({ username: 'b' });
+    const { user: userC } = await createTestUser({ username: 'c' });
+    const { user: userD } = await createTestUser({ username: 'd' });
+
+    // B es amigo de C y D; C también es amigo de D (mutuo entre B y C); D no es amigo de nadie más.
+    await makeFriends(userB._id.toString(), userC._id.toString());
+    await makeFriends(userB._id.toString(), userD._id.toString());
+    await makeFriends(userC._id.toString(), userD._id.toString());
+
+    const res = await request(app).get(`/api/friends/mutual/${userC._id.toString()}`).set(authed(tokenB));
+    expect(res.status).toBe(200);
+    expect(res.body.friends).toHaveLength(1);
+    expect(res.body.friends[0].username).toBe('d');
+    // C es amiga de B y D: 2 amigos en total, aunque acá solo 1 sea mutuo con B.
+    expect(res.body.friendsCount).toBe(2);
+  });
+
+  it('devuelve 403 si le pedís los amigos en común a alguien que no es tu amigo', async () => {
+    const { token: tokenA } = await createTestUser();
+    const { user: stranger } = await createTestUser();
+
+    const res = await request(app).get(`/api/friends/mutual/${stranger._id.toString()}`).set(authed(tokenA));
+    expect(res.status).toBe(403);
   });
 });

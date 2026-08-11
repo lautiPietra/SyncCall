@@ -20,6 +20,13 @@ export interface Friendship {
 export interface Friend {
   friendshipId: string;
   user: PublicUser;
+  friendsSince: string;
+}
+
+export interface MutualFriendsResponse {
+  friends: PublicUser[];
+  /** Cantidad total de amigos que tiene el dueño del perfil que se está viendo. */
+  friendsCount: number;
 }
 
 export interface FriendRequestPreview {
