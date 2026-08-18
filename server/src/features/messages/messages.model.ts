@@ -1,18 +1,31 @@
 import { Schema, model } from 'mongoose';
-import type { MessageDocument } from './messages.types';
+import { MESSAGE_REACTION_EMOJIS } from '@synccall/shared';
+import type { MessageDocument, MessageReactionSubdocument } from './messages.types';
+
+const reactionSchema = new Schema<MessageReactionSubdocument>(
+  {
+    emoji: { type: String, enum: MESSAGE_REACTION_EMOJIS, required: true },
+    user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { _id: false },
+);
 
 const messageSchema = new Schema<MessageDocument>({
   conversation: { type: Schema.Types.ObjectId, ref: 'Conversation', required: true },
   sender: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { type: String, enum: ['text', 'image'], default: 'text' },
+  type: { type: String, enum: ['text', 'image', 'audio'], default: 'text' },
   // Sin `required`: una imagen sin texto cifra un string vacío ('' -> ciphertext de largo 0),
   // y el validador default de Mongoose para String trata '' como "ausente" en un required.
   ciphertext: { type: String, default: '' },
   iv: { type: String, required: true },
   authTag: { type: String, required: true },
   mediaUrl: { type: String },
+  durationSec: { type: Number },
   createdAt: { type: Date, default: Date.now },
   readAt: { type: Date },
+  editedAt: { type: Date },
+  deleted: { type: Boolean, default: false },
+  reactions: { type: [reactionSchema], default: [] },
 });
 
 /**

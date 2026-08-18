@@ -170,6 +170,40 @@ describe('PATCH /api/friend-requests/:id', () => {
   });
 });
 
+describe('DELETE /api/friend-requests/:id', () => {
+  it('quien la envió puede cancelarla antes de que la respondan', async () => {
+    const { token: tokenA } = await createTestUser();
+    const { token: tokenB, user: userB } = await createTestUser();
+
+    const sendRes = await request(app)
+      .post('/api/friend-requests')
+      .set(authed(tokenA))
+      .send({ to: userB._id.toString() });
+    const requestId = sendRes.body.request._id ?? sendRes.body.request.id;
+
+    const cancelRes = await request(app).delete(`/api/friend-requests/${requestId}`).set(authed(tokenA));
+    expect(cancelRes.status).toBe(204);
+
+    const incomingRes = await request(app).get('/api/friend-requests').set(authed(tokenB));
+    expect(incomingRes.body.incoming).toHaveLength(0);
+  });
+
+  it('devuelve 404 si quien intenta cancelarla no es quien la envió', async () => {
+    const { token: tokenA } = await createTestUser();
+    const { user: userB } = await createTestUser();
+    const { token: tokenC } = await createTestUser();
+
+    const sendRes = await request(app)
+      .post('/api/friend-requests')
+      .set(authed(tokenA))
+      .send({ to: userB._id.toString() });
+    const requestId = sendRes.body.request._id ?? sendRes.body.request.id;
+
+    const res = await request(app).delete(`/api/friend-requests/${requestId}`).set(authed(tokenC));
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('GET /api/friends y DELETE /api/friends/:id', () => {
   it('lista amigos con la info pública del otro usuario y permite eliminarlos', async () => {
     const { token: tokenA } = await createTestUser();

@@ -16,11 +16,14 @@ function fallbackAvatarUrl(name: string): string {
 }
 
 export function Avatar({ src, alt, size = 64, status, className = '' }: AvatarProps) {
-  const [failed, setFailed] = useState(false);
+  // Un src vacío (grupo sin foto todavía, etc.) no siempre dispara onError de forma
+  // confiable en todos los navegadores — arranca directo en "sin imagen" en vez de esperar
+  // a que el <img> intente cargar "" y potencialmente se quede en el ícono roto.
+  const [failed, setFailed] = useState(!src);
 
   // Si cambia el src (otro usuario, o se actualizó la foto), darle una oportunidad nueva
   // antes de volver a caer en el fallback.
-  useEffect(() => setFailed(false), [src]);
+  useEffect(() => setFailed(!src), [src]);
 
   return (
     <div

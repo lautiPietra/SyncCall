@@ -56,3 +56,10 @@ export function uploadMessageImage(conversationId: string, file: File, caption?:
   }
   return apiFetch(`/conversations/${conversationId}/media`, { method: 'POST', body: formData });
 }
+
+export function uploadVoiceMessage(conversationId: string, blob: Blob): Promise<{ message: Message }> {
+  const formData = new FormData();
+  const extension = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm';
+  formData.append('audio', blob, `voice-message.${extension}`);
+  return apiFetch(`/conversations/${conversationId}/voice`, { method: 'POST', body: formData });
+}

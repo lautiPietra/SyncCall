@@ -37,6 +37,7 @@ export interface LeanPublicUser {
   bio?: string;
   accentColor: string;
   avatarFrame: PublicUser['avatarFrame'];
+  nameplate: PublicUser['nameplate'];
   status: PublicUser['status'];
   isOnline: boolean;
   createdAt: Date;
@@ -52,6 +53,7 @@ export function toPublicUser(doc: LeanPublicUser): PublicUser {
     bio: doc.bio,
     accentColor: doc.accentColor,
     avatarFrame: doc.avatarFrame,
+    nameplate: doc.nameplate,
     status: doc.status,
     isOnline: doc.isOnline,
     createdAt: doc.createdAt.toISOString(),
@@ -139,7 +141,16 @@ export async function listConversations(
     // $first como una serie de "distinct scans" en vez de escanear cada mensaje.
     Message.aggregate<{
       _id: Types.ObjectId;
-      doc: { sender: Types.ObjectId; type: 'text' | 'image'; ciphertext: string; iv: string; authTag: string; createdAt: Date };
+      doc: {
+        _id: Types.ObjectId;
+        sender: Types.ObjectId;
+        type: 'text' | 'image';
+        ciphertext: string;
+        iv: string;
+        authTag: string;
+        createdAt: Date;
+        deleted: boolean;
+      };
     }>([
       { $match: { conversation: { $in: conversationIds } } },
       { $sort: { conversation: 1, createdAt: -1 } },
@@ -165,10 +176,12 @@ export async function listConversations(
       otherUser: toPublicUser(otherUser),
       lastMessage: latest
         ? {
+            id: latest._id.toString(),
             type: latest.type,
             content: decryptText({ ciphertext: latest.ciphertext, iv: latest.iv, authTag: latest.authTag }),
             senderId: latest.sender.toString(),
             createdAt: latest.createdAt.toISOString(),
+            deleted: latest.deleted ?? false,
           }
         : null,
       unreadCount: isSlotA(conv, userId) ? conv.unreadCountA : conv.unreadCountB,

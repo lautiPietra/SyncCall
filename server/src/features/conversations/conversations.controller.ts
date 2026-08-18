@@ -88,6 +88,41 @@ export async function uploadMedia(req: Request, res: Response): Promise<void> {
   res.status(201).json({ message });
 }
 
+export async function uploadVoiceMessage(req: Request, res: Response): Promise<void> {
+  if (!req.file) {
+    throw new ApiError(400, 'No se recibió ningún archivo');
+  }
+
+  const userId = req.user!._id.toString();
+  const conversationId = req.params.id;
+
+  // Cloudinary trata el audio como resource_type "video" (mismo pipeline de transformación);
+  // de ahí sale `duration` sin que el cliente tenga que medirlo ni mandarlo por su cuenta.
+  const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'synccall/messages', resource_type: 'video' },
+      (error, uploadResult) => {
+        if (error || !uploadResult) {
+          reject(error ?? new Error('Error al subir el audio'));
+          return;
+        }
+        resolve(uploadResult);
+      },
+    );
+    stream.end(req.file!.buffer);
+  });
+
+  const { message, recipientId, requestStatus, justAccepted, requestPreview } = await messagesService.sendMessage(
+    conversationId,
+    userId,
+    { content: '', mediaUrl: result.secure_url, type: 'audio', durationSec: result.duration },
+  );
+
+  emitMessageDelivery({ senderId: userId, recipientId, message, requestStatus, justAccepted, requestPreview });
+
+  res.status(201).json({ message });
+}
+
 export async function listRequests(req: Request, res: Response): Promise<void> {
   const result = await conversationsService.listMessageRequests(req.user!._id.toString());
   res.json(result);

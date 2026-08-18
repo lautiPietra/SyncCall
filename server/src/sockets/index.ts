@@ -11,10 +11,12 @@ import { config } from '../config/env';
 import { verifyJwt } from '../features/auth/auth.service';
 import { User } from '../features/users/users.model';
 import { getFriendIds } from '../features/friends/friends.service';
+import { getMyGroupIds } from '../features/groups/groups.service';
 import { addConnection, isUserOnline, removeConnection } from './presence';
 import { setIo, tryGetIo } from './io';
 import { clearMessageBucket } from './messageRateLimiter';
 import { registerMessageHandlers } from './handlers/message.handlers';
+import { registerGroupHandlers } from './handlers/group.handlers';
 
 function readCookie(header: string | undefined, name: string): string | undefined {
   if (!header) {
@@ -48,8 +50,10 @@ export function initSocket(httpServer: HttpServer): void {
   io.on('connection', (socket: Socket) => {
     const userId = socket.data.userId as string;
     void socket.join(`user:${userId}`);
+    void joinGroupRooms(socket, userId);
     void handleConnect(io, userId, socket.id);
     registerMessageHandlers(io, socket, userId);
+    registerGroupHandlers(io, socket, userId);
 
     socket.on('disconnect', () => {
       void handleDisconnect(io, userId, socket.id);
@@ -57,6 +61,11 @@ export function initSocket(httpServer: HttpServer): void {
   });
 
   setIo(io);
+}
+
+async function joinGroupRooms(socket: Socket, userId: string): Promise<void> {
+  const groupIds = await getMyGroupIds(userId);
+  groupIds.forEach((id) => void socket.join(`group:${id}`));
 }
 
 async function handleConnect(io: Server, userId: string, socketId: string): Promise<void> {
@@ -102,7 +111,12 @@ export async function broadcastStatusChange(userId: string, status: UserStatus):
   await broadcastPresenceToFriends(io, userId, isUserOnline(userId), status);
 }
 
-/** Avisa a los amigos que el perfil (avatar, nombre, bio, banner, marco) cambió, para que lo vean sin recargar. */
+/**
+ * Avisa a los amigos que el perfil (avatar, nombre, bio, banner, marco, placa) cambió, para
+ * que lo vean sin recargar. También se lo manda al propio usuario: si tiene el perfil abierto
+ * en otra pestaña/dispositivo, se actualiza ahí también en vez de quedar desactualizado hasta
+ * el próximo reload.
+ */
 export async function broadcastProfileUpdate(userId: string, user: PublicUser): Promise<void> {
   const io = tryGetIo();
   if (!io) {
@@ -110,7 +124,7 @@ export async function broadcastProfileUpdate(userId: string, user: PublicUser): 
   }
   const friendIds = await getFriendIds(userId);
   const payload: ProfileUpdatedPayload = { user };
-  friendIds.forEach((friendId) => {
-    io.to(`user:${friendId}`).emit(SOCKET_EVENTS.PROFILE_UPDATED, payload);
+  [userId, ...friendIds].forEach((targetId) => {
+    io.to(`user:${targetId}`).emit(SOCKET_EVENTS.PROFILE_UPDATED, payload);
   });
 }

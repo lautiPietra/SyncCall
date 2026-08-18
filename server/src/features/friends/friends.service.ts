@@ -5,7 +5,7 @@ import type { UserDocument } from '../users/users.types';
 import { ApiError } from '../../lib/ApiError';
 
 export const PUBLIC_USER_FIELDS =
-  'username displayName avatarUrl avatarFrame accentColor status isOnline bio bannerUrl createdAt';
+  'username displayName avatarUrl avatarFrame nameplate accentColor status isOnline bio bannerUrl createdAt';
 
 export async function sendFriendRequest(fromId: string, toId: string) {
   if (fromId === toId) {
@@ -73,11 +73,12 @@ export async function respondFriendRequest(
   return { status: 'accepted', fromUserId };
 }
 
-export async function cancelFriendRequest(requestId: string, userId: string): Promise<void> {
-  const result = await FriendRequest.deleteOne({ _id: requestId, from: userId });
-  if (result.deletedCount === 0) {
+export async function cancelFriendRequest(requestId: string, userId: string): Promise<{ toUserId: string }> {
+  const request = await FriendRequest.findOneAndDelete({ _id: requestId, from: userId });
+  if (!request) {
     throw new ApiError(404, 'Solicitud no encontrada');
   }
+  return { toUserId: request.to.toString() };
 }
 
 export async function listFriendRequests(userId: string) {
@@ -127,6 +128,17 @@ export async function listMutualFriends(userId: string, otherUserId: string) {
     mutualIds.length === 0 ? [] : await User.find({ _id: { $in: mutualIds } }).select(PUBLIC_USER_FIELDS);
 
   return { friends, friendsCount: theirFriendIds.length };
+}
+
+export async function areFriends(userId: string, otherUserId: string): Promise<boolean> {
+  return Boolean(
+    await Friendship.exists({
+      $or: [
+        { userA: userId, userB: otherUserId },
+        { userA: otherUserId, userB: userId },
+      ],
+    }),
+  );
 }
 
 export async function getFriendIds(userId: string): Promise<string[]> {

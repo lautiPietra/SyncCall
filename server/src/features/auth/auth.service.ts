@@ -11,7 +11,7 @@ export function issueJwt(userId: string): string {
 }
 
 export function verifyJwt(token: string): JwtPayload {
-  return jwt.verify(token, config.jwtSecret) as JwtPayload;
+  return jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] }) as JwtPayload;
 }
 
 export function getAuthCookieOptions(): CookieOptions {
@@ -31,7 +31,7 @@ export function issueRefreshToken(userId: string): string {
 }
 
 export function verifyRefreshToken(token: string): JwtPayload {
-  return jwt.verify(token, config.jwtRefreshSecret) as JwtPayload;
+  return jwt.verify(token, config.jwtRefreshSecret, { algorithms: ['HS256'] }) as JwtPayload;
 }
 
 export function getRefreshCookieOptions(): CookieOptions {

@@ -1,5 +1,5 @@
 import { Schema, model } from 'mongoose';
-import { AVATAR_FRAME_IDS } from '@synccall/shared';
+import { AVATAR_FRAME_IDS, NAMEPLATE_IDS } from '@synccall/shared';
 import type { UserDocument } from './users.types';
 
 const userSchema = new Schema<UserDocument>({
@@ -12,6 +12,7 @@ const userSchema = new Schema<UserDocument>({
   bio: { type: String },
   accentColor: { type: String, required: true },
   avatarFrame: { type: String, enum: AVATAR_FRAME_IDS, default: 'none' },
+  nameplate: { type: String, enum: NAMEPLATE_IDS, default: 'none' },
   status: {
     type: String,
     enum: ['online', 'idle', 'dnd', 'invisible'],

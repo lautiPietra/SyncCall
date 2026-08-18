@@ -1,29 +1,43 @@
 import { useMemo, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom';
 import { getEffectiveStatus } from '@synccall/shared';
 import { useAuth } from './AuthProvider';
 import { useFriends } from './FriendsProvider';
 import { useConversations } from './ConversationsProvider';
 import { useMessageRequests } from './MessageRequestsProvider';
+import { useNotificationPreferences } from './NotificationPreferencesProvider';
 import { useSocketConnected } from './SocketProvider';
 import { SyncCallMark } from '../components/ui/SyncCallMark';
 import { FramedAvatar } from '../components/ui/AvatarFrame';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CountBadge } from '../components/ui/CountBadge';
+import { NameplateSurface } from '../components/ui/Nameplate';
 import { Spinner } from '../components/ui/Spinner';
 import { STATUS_LABELS } from '../components/ui/StatusDot';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { GroupIconRail } from '../features/groups/components/GroupIconRail';
+import { GroupRail } from '../features/groups/components/GroupRail';
 
 export function AppLayout() {
   const { user, logout } = useAuth();
   const { friends } = useFriends();
-  const { conversations, loading: conversationsLoading, hide } = useConversations();
+  const { conversations, loading: conversationsLoading, error: conversationsError, hide } = useConversations();
   const { requests: messageRequests } = useMessageRequests();
+  const { mutedAll, setMutedAll, mutedFriendIds } = useNotificationPreferences();
   const socketConnected = useSocketConnected();
   const navigate = useNavigate();
+  const groupMatch = useMatch('/groups/:groupId/*');
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [dmSearchQuery, setDmSearchQuery] = useState('');
   const [dmPickerOpen, setDmPickerOpen] = useState(false);
+  const [hidingConversation, setHidingConversation] = useState<{ id: string; displayName: string } | null>(null);
+
+  useEscapeToClose(() => {
+    if (dmPickerOpen) {
+      setDmPickerOpen(false);
+    }
+  });
   const dmSearchInputRef = useRef<HTMLInputElement>(null);
 
   const friendsWithoutConversation = useMemo(() => {
@@ -56,6 +70,8 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <GroupIconRail />
+
       {mobileNavOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/60 lg:hidden"
@@ -148,83 +164,115 @@ export function AppLayout() {
           </NavLink>
         </nav>
 
-        <div className="mt-4 flex items-center justify-between px-4">
-          <span className="text-xs font-semibold uppercase tracking-wide text-text-description">Mensajes directos</span>
-          <button
-            type="button"
-            onClick={() => dmSearchInputRef.current?.focus()}
-            aria-label="Agregar amigo a mensajes directos"
-            className="flex h-5 w-5 items-center justify-center rounded text-text-description transition-colors hover:bg-surface-hover hover:text-white"
-          >
-            <PlusIcon />
-          </button>
-        </div>
-
-        <div className="mt-1 flex-1 overflow-y-auto px-2 pb-2">
-          {conversationsLoading ? (
-            <div className="flex justify-center py-6">
-              <Spinner size={18} />
+        {groupMatch?.params.groupId ? (
+          <GroupRail groupId={groupMatch.params.groupId} />
+        ) : (
+          <>
+            <div className="mt-4 flex items-center justify-between px-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-text-description">Mensajes directos</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setMutedAll(!mutedAll)}
+                  aria-label={mutedAll ? 'Activar notificaciones' : 'Silenciar todas las notificaciones'}
+                  title={mutedAll ? 'Notificaciones silenciadas' : 'Silenciar todas las notificaciones'}
+                  className={`flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-surface-hover hover:text-white ${
+                    mutedAll ? 'text-status-dnd' : 'text-text-description'
+                  }`}
+                >
+                  {mutedAll ? <BellOffIcon /> : <BellIcon />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dmSearchInputRef.current?.focus()}
+                  aria-label="Agregar amigo a mensajes directos"
+                  className="flex h-5 w-5 items-center justify-center rounded text-text-description transition-colors hover:bg-surface-hover hover:text-white"
+                >
+                  <PlusIcon />
+                </button>
+              </div>
             </div>
-          ) : conversations.length === 0 ? (
-            <p className="px-2.5 py-2 text-xs text-text-disabled">
-              Todavía no iniciaste ninguna conversación. Buscá arriba o tocá + para empezar.
-            </p>
-          ) : (
-            conversations.map((conv) => {
-              const friend = conv.otherUser;
-              return (
-                <div key={conv.id} className="group relative">
-                  <NavLink
-                    to={`/chat/${friend.id}`}
-                    onClick={() => setMobileNavOpen(false)}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2.5 rounded-md py-1.5 pl-2.5 pr-8 text-sm transition-colors ${
-                        isActive
-                          ? 'bg-surface-hover text-white'
-                          : 'text-text-description hover:bg-surface-hover/60 hover:text-white'
-                      }`
-                    }
-                  >
-                    <FramedAvatar
-                      frame={friend.avatarFrame}
-                      src={friend.avatarUrl}
-                      alt={friend.displayName}
-                      size={28}
-                      status={getEffectiveStatus(friend.status, friend.isOnline)}
-                    />
-                    <span className={`truncate flex-1 ${conv.unreadCount > 0 ? 'font-semibold text-white' : ''}`}>
-                      {friend.displayName}
-                    </span>
-                    <CountBadge count={conv.unreadCount} className="h-5 min-w-5 px-1.5 text-[11px]" />
-                  </NavLink>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      void hide(conv.id);
-                    }}
-                    aria-label={`Eliminar conversación con ${friend.displayName}`}
-                    className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-text-disabled opacity-0 transition-opacity hover:bg-status-dnd/15 hover:text-status-dnd group-hover:opacity-100"
-                  >
-                    <XIcon />
-                  </button>
+
+            {conversationsError && <p className="px-4 pb-2 text-xs text-status-dnd">{conversationsError}</p>}
+
+            <div className="mt-1 flex-1 overflow-y-auto px-2 pb-2">
+              {conversationsLoading ? (
+                <div className="flex justify-center py-6">
+                  <Spinner size={18} />
                 </div>
-              );
-            })
-          )}
-        </div>
+              ) : conversations.length === 0 ? (
+                <p className="px-2.5 py-2 text-xs text-text-disabled">
+                  Todavía no iniciaste ninguna conversación. Buscá arriba o tocá + para empezar.
+                </p>
+              ) : (
+                conversations.map((conv) => {
+                  const friend = conv.otherUser;
+                  return (
+                    <div key={conv.id} className="group relative">
+                      <NavLink
+                        to={`/chat/${friend.id}`}
+                        onClick={() => setMobileNavOpen(false)}
+                        className={({ isActive }) =>
+                          `relative flex items-center gap-2.5 overflow-hidden rounded-md py-1.5 pl-2.5 pr-8 text-sm transition-colors ${
+                            isActive
+                              ? 'bg-surface-hover text-white'
+                              : 'text-text-description hover:bg-surface-hover/60 hover:text-white'
+                          }`
+                        }
+                      >
+                        <NameplateSurface nameplate={friend.nameplate} />
+                        <div className="relative z-10 flex min-w-0 flex-1 items-center gap-2.5">
+                          <FramedAvatar
+                            frame={friend.avatarFrame}
+                            src={friend.avatarUrl}
+                            alt={friend.displayName}
+                            size={28}
+                            status={getEffectiveStatus(friend.status, friend.isOnline)}
+                          />
+                          <span className={`truncate flex-1 ${conv.unreadCount > 0 || friend.nameplate !== 'none' ? 'font-semibold text-white' : ''}`}>
+                            {friend.displayName}
+                          </span>
+                          {mutedFriendIds.has(friend.id) && (
+                            <span title="Notificaciones silenciadas" className="shrink-0 text-text-disabled">
+                              <BellOffIcon size={12} />
+                            </span>
+                          )}
+                          <CountBadge count={conv.unreadCount} className="h-5 min-w-5 px-1.5 text-[11px]" />
+                        </div>
+                      </NavLink>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setHidingConversation({ id: conv.id, displayName: friend.displayName });
+                        }}
+                        aria-label={`Eliminar conversación con ${friend.displayName}`}
+                        className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-text-disabled opacity-0 transition-opacity hover:bg-status-dnd/15 hover:text-status-dnd group-hover:opacity-100"
+                      >
+                        <XIcon />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
 
         <div className="flex items-center gap-1.5 border-t border-surface-border/60 p-2">
           <Link
             to="/profile"
             onClick={() => setMobileNavOpen(false)}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-hover"
+            className="relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md px-2 py-1.5 transition-colors hover:bg-surface-hover"
           >
-            <FramedAvatar frame={user.avatarFrame} src={user.avatarUrl} alt={user.displayName} size={32} status={selfStatus} />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-white">{user.displayName}</p>
-              <p className="truncate text-xs text-text-description">{STATUS_LABELS[selfStatus]}</p>
+            <NameplateSurface nameplate={user.nameplate} />
+            <div className="relative z-10 flex min-w-0 items-center gap-2">
+              <FramedAvatar frame={user.avatarFrame} src={user.avatarUrl} alt={user.displayName} size={32} status={selfStatus} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white">{user.displayName}</p>
+                <p className="truncate text-xs text-text-description">{STATUS_LABELS[selfStatus]}</p>
+              </div>
             </div>
           </Link>
           <button
@@ -267,7 +315,41 @@ export function AppLayout() {
           onCancel={() => setConfirmingLogout(false)}
         />
       )}
+
+      {hidingConversation && (
+        <ConfirmDialog
+          title="¿Eliminar conversación?"
+          description={`Vas a dejar de ver la conversación con ${hidingConversation.displayName} en tu lista. Si te vuelve a escribir, va a reaparecer.`}
+          confirmLabel="Eliminar"
+          variant="danger"
+          onConfirm={() => {
+            void hide(hidingConversation.id);
+            setHidingConversation(null);
+          }}
+          onCancel={() => setHidingConversation(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function BellIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function BellOffIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8.7 3.7A6 6 0 0 1 18 8c0 3.5.7 5.9 1.4 7.4" />
+      <path d="M6.3 6.3C6.1 6.9 6 7.7 6 8c0 7-3 9-3 9h13" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DmErrorPayload, Message, MessageNewPayload } from '@synccall/shared';
+import type { DmErrorPayload, Message, MessageNewPayload, MessageReactionEmoji, MessageUpdatedPayload } from '@synccall/shared';
 import { SOCKET_EVENTS } from '@synccall/shared';
 import { ApiClientError } from '../../../lib/apiClient';
 import { socket } from '../../../lib/socketClient';
@@ -49,11 +49,20 @@ export function useConversationMessages(conversationId: string | null) {
       setError(payload.message);
     }
 
+    function handleMessageUpdated(payload: MessageUpdatedPayload): void {
+      if (payload.message.conversation !== conversationId) {
+        return;
+      }
+      setMessages((prev) => prev.map((m) => (m.id === payload.message.id ? payload.message : m)));
+    }
+
     socket.on(SOCKET_EVENTS.MESSAGE_NEW, handleNewMessage);
     socket.on(SOCKET_EVENTS.DM_ERROR, handleError);
+    socket.on(SOCKET_EVENTS.MESSAGE_UPDATED, handleMessageUpdated);
     return () => {
       socket.off(SOCKET_EVENTS.MESSAGE_NEW, handleNewMessage);
       socket.off(SOCKET_EVENTS.DM_ERROR, handleError);
+      socket.off(SOCKET_EVENTS.MESSAGE_UPDATED, handleMessageUpdated);
     };
   }, [conversationId]);
 
@@ -81,6 +90,26 @@ export function useConversationMessages(conversationId: string | null) {
     socket.emit(SOCKET_EVENTS.DM_SEND, { conversationId, content: trimmed });
   }
 
+  function editMessage(messageId: string, content: string): void {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      return;
+    }
+    socket.emit(SOCKET_EVENTS.MESSAGE_EDIT, { messageId, content: trimmed });
+  }
+
+  function deleteMessage(messageId: string): void {
+    socket.emit(SOCKET_EVENTS.MESSAGE_DELETE, { messageId });
+  }
+
+  function reactToMessage(messageId: string, emoji: MessageReactionEmoji): void {
+    socket.emit(SOCKET_EVENTS.MESSAGE_REACT, { messageId, emoji });
+  }
+
+  function unreactToMessage(messageId: string): void {
+    socket.emit(SOCKET_EVENTS.MESSAGE_UNREACT, { messageId });
+  }
+
   return {
     messages,
     loading,
@@ -89,5 +118,9 @@ export function useConversationMessages(conversationId: string | null) {
     error,
     loadOlder,
     sendMessage,
+    editMessage,
+    deleteMessage,
+    reactToMessage,
+    unreactToMessage,
   };
 }

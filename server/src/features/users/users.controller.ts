@@ -18,6 +18,7 @@ function toPublicUser(user: UserDocument): PublicUser {
     bio: user.bio,
     accentColor: user.accentColor,
     avatarFrame: user.avatarFrame,
+    nameplate: user.nameplate,
     status: user.status,
     isOnline: user.isOnline,
     createdAt: user.createdAt.toISOString(),

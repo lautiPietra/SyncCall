@@ -10,7 +10,7 @@ import {
 import { asyncHandler } from '../../middleware/asyncHandler';
 import { requireAuth } from '../../middleware/auth.middleware';
 import { chatMediaLimiter } from '../../middleware/rateLimit.middleware';
-import { uploadImage } from '../../middleware/upload.middleware';
+import { uploadAudio, uploadImage } from '../../middleware/upload.middleware';
 import { validate } from '../../middleware/validate.middleware';
 import {
   createConversation,
@@ -22,6 +22,7 @@ import {
   markRead,
   respondRequest,
   uploadMedia,
+  uploadVoiceMessage,
 } from './conversations.controller';
 
 export const conversationsRouter = Router();
@@ -51,4 +52,11 @@ conversationsRouter.post(
   chatMediaLimiter,
   uploadImage.single('image'),
   asyncHandler(uploadMedia),
+);
+conversationsRouter.post(
+  '/:id/voice',
+  validate(conversationIdParamsSchema, 'params'),
+  chatMediaLimiter,
+  uploadAudio.single('audio'),
+  asyncHandler(uploadVoiceMessage),
 );

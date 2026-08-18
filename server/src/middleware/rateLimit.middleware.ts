@@ -77,3 +77,19 @@ export const chatMediaLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: userKey,
 });
+
+export const groupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: userKey,
+});
+
+export const groupPhotoLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: userKey,
+});

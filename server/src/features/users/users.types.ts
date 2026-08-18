@@ -1,5 +1,5 @@
 import type { Document, Types } from 'mongoose';
-import type { AvatarFrameId, UserStatus } from '@synccall/shared';
+import type { AvatarFrameId, NameplateId, UserStatus } from '@synccall/shared';
 
 export interface UserDocument extends Document<Types.ObjectId> {
   googleId?: string;
@@ -11,6 +11,7 @@ export interface UserDocument extends Document<Types.ObjectId> {
   bio?: string;
   accentColor: string;
   avatarFrame: AvatarFrameId;
+  nameplate: NameplateId;
   status: UserStatus;
   isOnline: boolean;
   createdAt: Date;

@@ -131,6 +131,28 @@ describe('mensajes: envío, cifrado en la base y lectura', () => {
     expect(page.messages[0].mediaUrl).toBe(message.mediaUrl);
   });
 
+  it('permite un mensaje de voz: type "audio" y duración persisten y se leen bien', async () => {
+    const { user: userA } = await createTestUser();
+    const { user: userB } = await createTestUser();
+    await makeFriends(userA._id.toString(), userB._id.toString());
+    const conversation = await conversationsService.getOrCreateConversation(userA._id.toString(), userB._id.toString());
+
+    const { message } = await messagesService.sendMessage(conversation.id, userA._id.toString(), {
+      content: '',
+      mediaUrl: 'https://res.cloudinary.com/demo/video/upload/synccall/messages/voice.webm',
+      type: 'audio',
+      durationSec: 12.4,
+    });
+
+    expect(message.type).toBe('audio');
+    expect(message.durationSec).toBe(12.4);
+    expect(message.mediaUrl).toContain('cloudinary');
+
+    const page = await messagesService.getMessages(conversation.id, userB._id.toString(), { limit: 50 });
+    expect(page.messages[0].type).toBe('audio');
+    expect(page.messages[0].durationSec).toBe(12.4);
+  });
+
   it('rechaza leer o mandar mensajes a quien no participa de la conversación', async () => {
     const { user: userA } = await createTestUser();
     const { user: userB } = await createTestUser();

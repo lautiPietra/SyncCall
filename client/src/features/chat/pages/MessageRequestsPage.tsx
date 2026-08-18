@@ -48,7 +48,9 @@ export function MessageRequestsPage() {
                         {req.lastMessage
                           ? req.lastMessage.type === 'image'
                             ? '📷 Imagen'
-                            : req.lastMessage.content
+                            : req.lastMessage.type === 'audio'
+                              ? '🎤 Mensaje de voz'
+                              : req.lastMessage.content
                           : 'Te quiere mandar un mensaje'}
                       </p>
                     </div>

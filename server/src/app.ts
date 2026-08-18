@@ -12,6 +12,7 @@ import authRoutes from './features/auth/auth.routes';
 import usersRoutes from './features/users/users.routes';
 import { friendRequestsRouter, friendsRouter } from './features/friends/friends.routes';
 import { conversationsRouter } from './features/conversations/conversations.routes';
+import { groupsRouter } from './features/groups/groups.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -33,6 +34,7 @@ export function createApp(): Express {
   app.use('/api/friend-requests', friendRequestsRouter);
   app.use('/api/friends', friendsRouter);
   app.use('/api/conversations', conversationsRouter);
+  app.use('/api/groups', groupsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

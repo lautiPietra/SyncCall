@@ -27,6 +27,7 @@ El proyecto está pensado como pieza de portafolio, así que además de funciona
 - **Solicitudes de amistad**: enviar, aceptar, rechazar.
 - **Lista de amigos** con estado online/offline actualizado en tiempo real.
 - **Mensajes directos (DM)** en tiempo real, con historial persistente e indicador de "escribiendo...".
+- **Reacciones, edición y borrado de mensajes**, en tiempo real para ambos participantes.
 
 ## Fuera de alcance por ahora (Fase 2)
 
@@ -34,7 +35,7 @@ El proyecto está pensado como pieza de portafolio, así que además de funciona
 - Canales de texto grupales dentro de un servidor.
 - Canales de voz / videollamadas.
 - Roles y permisos.
-- Reacciones, edición y borrado de mensajes, notificaciones push.
+- Notificaciones push.
 
 ## Identidad visual
 

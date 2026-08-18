@@ -10,6 +10,8 @@ import { Input } from '../../../components/ui/Input';
 import { Spinner } from '../../../components/ui/Spinner';
 import { STATUS_LABELS } from '../../../components/ui/StatusDot';
 import { useFriends } from '../../../app/FriendsProvider';
+import { useNotificationPreferences } from '../../../app/NotificationPreferencesProvider';
+import { useEscapeToClose } from '../../../hooks/useEscapeToClose';
 import { useUserSearch } from '../hooks/useUserSearch';
 import { listMutualFriends } from '../api/friends.api';
 import { getConversationStatus, respondMessageRequest } from '../../chat/api/conversations.api';
@@ -36,6 +38,7 @@ export function FriendsPage() {
     cancelRequest,
     removeFriend,
   } = useFriends();
+  const { isFriendMuted, setFriendMuted } = useNotificationPreferences();
   const search = useUserSearch();
   const navigate = useNavigate();
 
@@ -43,6 +46,7 @@ export function FriendsPage() {
   const [removingFriendId, setRemovingFriendId] = useState<string | null>(null);
   const [cancelingRequestId, setCancelingRequestId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [openSidebarMenuId, setOpenSidebarMenuId] = useState<string | null>(null);
   const [viewingFriendId, setViewingFriendId] = useState<string | null>(null);
 
   const friendIds = new Set(friends.map((f) => f.user.id));
@@ -59,6 +63,10 @@ export function FriendsPage() {
 
   function openFriendMenu(friendshipId: string): void {
     setOpenMenuId((current) => (current === friendshipId ? null : friendshipId));
+  }
+
+  function openSidebarFriendMenu(friendshipId: string): void {
+    setOpenSidebarMenuId((current) => (current === friendshipId ? null : friendshipId));
   }
 
   const visibleFriends = tab === 'online' ? onlineFriends : friends;
@@ -221,6 +229,8 @@ export function FriendsPage() {
                           onViewProfile={() => setViewingFriendId(friendshipId)}
                           onSendMessage={() => navigate(`/chat/${user.id}`)}
                           onRemove={() => setRemovingFriendId(friendshipId)}
+                          isMuted={isFriendMuted(user.id)}
+                          onToggleMute={() => setFriendMuted(user.id, !isFriendMuted(user.id))}
                         />
                       ) : null
                     }
@@ -247,7 +257,7 @@ export function FriendsPage() {
               {onlineFriends.map(({ friendshipId, user }) => (
                 <div key={friendshipId} className="flex items-center gap-3">
                   <div className="relative shrink-0">
-                    <button type="button" onClick={() => openFriendMenu(friendshipId)} className="rounded-full transition-transform hover:scale-105">
+                    <button type="button" onClick={() => openSidebarFriendMenu(friendshipId)} className="rounded-full transition-transform hover:scale-105">
                       <FramedAvatar
                         frame={user.avatarFrame}
                         src={user.avatarUrl}
@@ -256,12 +266,14 @@ export function FriendsPage() {
                         status={getEffectiveStatus(user.status, user.isOnline)}
                       />
                     </button>
-                    {openMenuId === friendshipId && (
+                    {openSidebarMenuId === friendshipId && (
                       <FriendActionsMenu
-                        onClose={() => setOpenMenuId(null)}
+                        onClose={() => setOpenSidebarMenuId(null)}
                         onViewProfile={() => setViewingFriendId(friendshipId)}
                         onSendMessage={() => navigate(`/chat/${user.id}`)}
                         onRemove={() => setRemovingFriendId(friendshipId)}
+                        isMuted={isFriendMuted(user.id)}
+                        onToggleMute={() => setFriendMuted(user.id, !isFriendMuted(user.id))}
                       />
                     )}
                   </div>
@@ -354,7 +366,7 @@ function PersonRow({
       frame={user.avatarFrame}
       src={user.avatarUrl}
       alt={user.displayName}
-      size={48}
+      size={40}
       status={getEffectiveStatus(user.status, user.isOnline)}
     />
   );
@@ -375,7 +387,11 @@ function PersonRow({
         <p className="truncate text-base font-medium text-white">{user.displayName}</p>
         <p className="truncate text-sm text-text-description">{subtitle ?? `@${user.username}`}</p>
       </div>
-      {children && <div className="flex shrink-0 items-center gap-2.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{children}</div>}
+      {children && (
+        <div className="flex shrink-0 items-center gap-2.5 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -385,12 +401,18 @@ function FriendActionsMenu({
   onViewProfile,
   onSendMessage,
   onRemove,
+  isMuted,
+  onToggleMute,
 }: {
   onClose: () => void;
   onViewProfile: () => void;
   onSendMessage: () => void;
   onRemove: () => void;
+  isMuted: boolean;
+  onToggleMute: () => void;
 }) {
+  useEscapeToClose(onClose);
+
   return (
     <>
       <div className="fixed inset-0 z-30" onClick={onClose} />
@@ -411,7 +433,14 @@ function FriendActionsMenu({
             onClose();
           }}
         />
-        <MenuItem icon={<MuteIcon />} label="Silenciar" disabled />
+        <MenuItem
+          icon={<MuteIcon />}
+          label={isMuted ? 'Dejar de silenciar' : 'Silenciar'}
+          onClick={() => {
+            onToggleMute();
+            onClose();
+          }}
+        />
         <div className="my-1.5 border-t border-surface-border/60" />
         <MenuItem
           icon={<TrashIcon />}
@@ -480,6 +509,9 @@ function UserProfileModal({
   const [blockedConversationId, setBlockedConversationId] = useState<string | null>(null);
   const [reactivating, setReactivating] = useState(false);
   const [reactivated, setReactivated] = useState(false);
+  const [reactivateError, setReactivateError] = useState(false);
+
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -526,12 +558,13 @@ function UserProfileModal({
       return;
     }
     setReactivating(true);
+    setReactivateError(false);
     try {
       await respondMessageRequest(blockedConversationId, 'accepted');
       setBlockedConversationId(null);
       setReactivated(true);
     } catch {
-      // Sin feedback dedicado: es una acción secundaria, el usuario puede reintentar.
+      setReactivateError(true);
     } finally {
       setReactivating(false);
     }
@@ -543,10 +576,11 @@ function UserProfileModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm overflow-hidden rounded-xl border border-surface-border/60 bg-card shadow-2xl shadow-black/40"
+        className="flex w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-surface-border/60 bg-card shadow-2xl shadow-black/40"
+        style={{ maxHeight: '90vh' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative h-24">
+        <div className="relative h-28 shrink-0">
           {user.bannerUrl ? (
             <img src={user.bannerUrl} alt="" className="h-full w-full object-cover" />
           ) : (
@@ -562,7 +596,7 @@ function UserProfileModal({
           </button>
         </div>
 
-        <div className="flex flex-col items-center gap-2 px-6 pb-6 pt-0">
+        <div className="flex flex-col items-center gap-2 overflow-y-auto px-8 pb-6 pt-0">
           <div className="-mt-10 rounded-full border-4 border-card">
             <FramedAvatar frame={user.avatarFrame} src={user.avatarUrl} alt={user.displayName} size={80} status={effectiveStatus} />
           </div>
@@ -571,30 +605,6 @@ function UserProfileModal({
             <p className="text-lg font-semibold text-white">{user.displayName}</p>
             <p className="text-sm text-text-description">@{user.username}</p>
             <p className="mt-1 text-xs text-text-disabled">{STATUS_LABELS[effectiveStatus]}</p>
-          </div>
-
-          {user.bio ? (
-            <p className="mt-2 w-full whitespace-pre-line rounded-lg bg-bg/60 p-3 text-center text-sm text-text-description">
-              {user.bio}
-            </p>
-          ) : (
-            <p className="mt-2 text-sm italic text-text-disabled">Sin biografía</p>
-          )}
-
-          <div className="mt-2 flex flex-col items-center gap-1">
-            <p className="flex items-center gap-1.5 text-xs text-text-disabled">
-              <CalendarIcon />
-              Miembro desde {MEMBER_SINCE_FORMATTER.format(new Date(user.createdAt))}
-            </p>
-            <p className="flex items-center gap-1.5 text-xs text-text-disabled">
-              <FriendsGroupIcon className="h-3 w-3" />
-              Amigos desde {MEMBER_SINCE_FORMATTER.format(new Date(friendsSince))}
-            </p>
-            {friendsCount !== null && (
-              <p className="text-xs text-text-disabled">
-                {friendsCount} {friendsCount === 1 ? 'amigo' : 'amigos'}
-              </p>
-            )}
           </div>
 
           {blockedConversationId && (
@@ -611,32 +621,59 @@ function UserProfileModal({
             </div>
           )}
           {reactivated && <p className="mt-2 text-xs text-status-online">Ya puede volver a mandarte mensajes.</p>}
+          {reactivateError && (
+            <p className="mt-2 text-xs text-status-dnd">No se pudo activar los mensajes. Probá de nuevo.</p>
+          )}
 
-          <div className="mt-3 w-full">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-description">
-              Amigos en común
-            </p>
-            {mutualError ? (
-              <p className="text-sm text-text-disabled">No se pudo cargar</p>
-            ) : mutualFriends === null ? (
-              <div className="flex justify-center py-2">
-                <Spinner size={18} />
+          <div className="mt-4 grid w-full grid-cols-1 gap-6 sm:grid-cols-2">
+            <div className="flex flex-col gap-4">
+              {user.bio ? (
+                <p className="w-full whitespace-pre-line rounded-lg bg-bg/60 p-3 text-sm text-text-description">{user.bio}</p>
+              ) : (
+                <p className="text-sm italic text-text-disabled">Sin biografía</p>
+              )}
+
+              <div className="flex flex-col gap-1">
+                <p className="flex items-center gap-1.5 text-xs text-text-disabled">
+                  <CalendarIcon />
+                  Miembro desde {MEMBER_SINCE_FORMATTER.format(new Date(user.createdAt))}
+                </p>
+                <p className="flex items-center gap-1.5 text-xs text-text-disabled">
+                  <FriendsGroupIcon className="h-3 w-3" />
+                  Amigos desde {MEMBER_SINCE_FORMATTER.format(new Date(friendsSince))}
+                </p>
+                {friendsCount !== null && (
+                  <p className="text-xs text-text-disabled">
+                    {friendsCount} {friendsCount === 1 ? 'amigo' : 'amigos'}
+                  </p>
+                )}
               </div>
-            ) : mutualFriends.length === 0 ? (
-              <p className="text-sm text-text-disabled">Todavía no tienen amigos en común</p>
-            ) : (
-              <div className="flex flex-col divide-y divide-surface-border/40">
-                {mutualFriends.map((mutual) => (
-                  <div key={mutual.id} className="flex items-center gap-3 py-2">
-                    <FramedAvatar frame={mutual.avatarFrame} src={mutual.avatarUrl} alt={mutual.displayName} size={32} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-white">{mutual.displayName}</p>
-                      <p className="truncate text-xs text-text-description">@{mutual.username}</p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-description">Amigos en común</p>
+              {mutualError ? (
+                <p className="text-sm text-text-disabled">No se pudo cargar</p>
+              ) : mutualFriends === null ? (
+                <div className="flex justify-center py-2">
+                  <Spinner size={18} />
+                </div>
+              ) : mutualFriends.length === 0 ? (
+                <p className="text-sm text-text-disabled">Todavía no tienen amigos en común</p>
+              ) : (
+                <div className="flex max-h-40 flex-col divide-y divide-surface-border/40 overflow-y-auto">
+                  {mutualFriends.map((mutual) => (
+                    <div key={mutual.id} className="flex items-center gap-3 py-2">
+                      <FramedAvatar frame={mutual.avatarFrame} src={mutual.avatarUrl} alt={mutual.displayName} size={32} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-white">{mutual.displayName}</p>
+                        <p className="truncate text-xs text-text-description">@{mutual.username}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="mt-5 flex w-full gap-2">

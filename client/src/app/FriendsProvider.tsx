@@ -96,6 +96,8 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     socket.on(SOCKET_EVENTS.PRESENCE_UPDATE, handlePresence);
     socket.on(SOCKET_EVENTS.FRIEND_REQUEST_NEW, handleFriendsChanged);
     socket.on(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, handleFriendsChanged);
+    socket.on(SOCKET_EVENTS.FRIEND_REQUEST_DECLINED, handleFriendsChanged);
+    socket.on(SOCKET_EVENTS.FRIEND_REQUEST_CANCELLED, handleFriendsChanged);
     socket.on(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendRemoved);
     socket.on(SOCKET_EVENTS.PROFILE_UPDATED, handleProfileUpdated);
 
@@ -103,6 +105,8 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       socket.off(SOCKET_EVENTS.PRESENCE_UPDATE, handlePresence);
       socket.off(SOCKET_EVENTS.FRIEND_REQUEST_NEW, handleFriendsChanged);
       socket.off(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, handleFriendsChanged);
+      socket.off(SOCKET_EVENTS.FRIEND_REQUEST_DECLINED, handleFriendsChanged);
+      socket.off(SOCKET_EVENTS.FRIEND_REQUEST_CANCELLED, handleFriendsChanged);
       socket.off(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendRemoved);
       socket.off(SOCKET_EVENTS.PROFILE_UPDATED, handleProfileUpdated);
     };

@@ -90,6 +90,15 @@ export default {
           '60%': { transform: 'scale(1.3)', opacity: '1' },
           '100%': { transform: 'scale(1)', opacity: '1' },
         },
+        'ember-rise': {
+          '0%': { transform: 'translateY(0) scale(0.7)', opacity: '0' },
+          '25%': { opacity: '1' },
+          '100%': { transform: 'translateY(-22px) scale(0.3)', opacity: '0' },
+        },
+        'shimmer-sweep': {
+          '0%': { transform: 'translateX(-140%) skewX(-20deg)' },
+          '100%': { transform: 'translateX(320%) skewX(-20deg)' },
+        },
       },
       animation: {
         'logo-pop': 'logo-pop 0.6s ease-out both',
@@ -105,6 +114,8 @@ export default {
         flicker: 'flicker 1.4s ease-in-out infinite',
         'aurora-flow': 'aurora-flow 5s ease-in-out infinite',
         'badge-pop': 'badge-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both',
+        'ember-rise': 'ember-rise 2.6s ease-in-out infinite',
+        'shimmer-sweep': 'shimmer-sweep 3.4s ease-in-out infinite',
       },
     },
   },

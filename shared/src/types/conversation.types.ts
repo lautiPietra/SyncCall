@@ -20,7 +20,7 @@ export interface Conversation {
 export interface ConversationSummary {
   id: string;
   otherUser: PublicUser;
-  lastMessage: { type: MessageType; content: string; senderId: string; createdAt: string } | null;
+  lastMessage: { id: string; type: MessageType; content: string; senderId: string; createdAt: string; deleted: boolean } | null;
   unreadCount: number;
   requestStatus: ConversationRequestStatus;
   requestedBy: string | null;

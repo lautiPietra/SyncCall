@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AVATAR_FRAME_IDS } from '../types/user.types';
+import { AVATAR_FRAME_IDS, NAMEPLATE_IDS } from '../types/user.types';
 
 export const usernameSchema = z
   .string()
@@ -15,12 +15,15 @@ export const userStatusSchema = z.enum(['online', 'idle', 'dnd', 'invisible']);
 
 export const avatarFrameSchema = z.enum(AVATAR_FRAME_IDS);
 
+export const nameplateSchema = z.enum(NAMEPLATE_IDS);
+
 export const updateProfileSchema = z.object({
   username: usernameSchema.optional(),
   displayName: z.string().min(1).max(32).optional(),
   bio: bioSchema,
   accentColor: accentColorSchema.optional(),
   avatarFrame: avatarFrameSchema.optional(),
+  nameplate: nameplateSchema.optional(),
   status: userStatusSchema.optional(),
 });
 

@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { User } from '@synccall/shared';
+import type { ProfileUpdatedPayload, User } from '@synccall/shared';
+import { SOCKET_EVENTS } from '@synccall/shared';
 import { fetchMe, logout as logoutRequest } from '../features/auth/api/auth.api';
+import { socket } from '../lib/socketClient';
 
 interface AuthContextValue {
   user: User | null;
@@ -20,6 +22,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(({ user }) => setUser(user))
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    // Si guardás tu perfil en otra pestaña/dispositivo, esto lo refleja acá sin recargar
+    // (el server también manda este evento de vuelta al propio usuario, no solo a sus amigos).
+    function handleProfileUpdated(payload: ProfileUpdatedPayload): void {
+      setUser((prev) => (prev && prev.id === payload.user.id ? { ...prev, ...payload.user } : prev));
+    }
+    socket.on(SOCKET_EVENTS.PROFILE_UPDATED, handleProfileUpdated);
+    return () => {
+      socket.off(SOCKET_EVENTS.PROFILE_UPDATED, handleProfileUpdated);
+    };
   }, []);
 
   async function logout(): Promise<void> {

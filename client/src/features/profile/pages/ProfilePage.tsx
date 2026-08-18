@@ -1,9 +1,10 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react';
-import type { AvatarFrameId, UserStatus } from '@synccall/shared';
-import { AVATAR_FRAME_IDS } from '@synccall/shared';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import type { AvatarFrameId, NameplateId, User, UserStatus } from '@synccall/shared';
+import { AVATAR_FRAME_IDS, NAMEPLATE_IDS } from '@synccall/shared';
 import { AVATAR_FRAME_LABELS, FramedAvatar } from '../../../components/ui/AvatarFrame';
 import { Button } from '../../../components/ui/Button';
 import { Input, Textarea } from '../../../components/ui/Input';
+import { NAMEPLATE_LABELS, NameplatePreview } from '../../../components/ui/Nameplate';
 import { STATUS_LABELS, StatusDot } from '../../../components/ui/StatusDot';
 import { useFriends } from '../../../app/FriendsProvider';
 import { useProfile } from '../hooks/useProfile';
@@ -25,8 +26,27 @@ export function ProfilePage() {
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [bio, setBio] = useState(user?.bio ?? '');
   const [avatarFrame, setAvatarFrame] = useState<AvatarFrameId>(user?.avatarFrame ?? 'none');
+  const [nameplate, setNameplate] = useState<NameplateId>(user?.nameplate ?? 'none');
   const [status, setStatus] = useState<UserStatus>(user?.status ?? 'online');
   const [savedMessage, setSavedMessage] = useState(false);
+
+  // Si el perfil cambia por fuera de este formulario (otra pestaña, otro dispositivo, o el
+  // eco del propio guardado) hay que traer esos valores acá, pero solo campo por campo y
+  // solo si no los tocaste vos: si estabas escribiendo algo distinto, no te lo pisamos.
+  const lastSyncedRef = useRef<User | null>(user);
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    const prev = lastSyncedRef.current;
+    setUsername((current) => (current === (prev?.username ?? '') ? user.username : current));
+    setDisplayName((current) => (current === (prev?.displayName ?? '') ? user.displayName : current));
+    setBio((current) => (current === (prev?.bio ?? '') ? (user.bio ?? '') : current));
+    setAvatarFrame((current) => (current === (prev?.avatarFrame ?? 'none') ? user.avatarFrame : current));
+    setNameplate((current) => (current === (prev?.nameplate ?? 'none') ? user.nameplate : current));
+    setStatus((current) => (current === (prev?.status ?? 'online') ? user.status : current));
+    lastSyncedRef.current = user;
+  }, [user]);
 
   if (!user) {
     return null;
@@ -35,7 +55,7 @@ export function ProfilePage() {
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
     setSavedMessage(false);
-    const ok = await save({ username, displayName, bio, avatarFrame, status });
+    const ok = await save({ username, displayName, bio, avatarFrame, nameplate, status });
     if (ok) {
       setSavedMessage(true);
       setTimeout(() => setSavedMessage(false), 2500);
@@ -183,6 +203,36 @@ export function ProfilePage() {
 
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-description">
+              <PlateIcon />
+              Elegir placa
+            </span>
+            <p className="text-xs text-text-disabled">
+              Se muestra detrás de tu nombre en Mensajes Directos (el tuyo y el de tus amigos que la tengan) — no aparece en la lista de Amigos.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {NAMEPLATE_IDS.map((plateId) => (
+                <button
+                  key={plateId}
+                  type="button"
+                  onClick={() => setNameplate(plateId)}
+                  className={`flex flex-col items-center gap-1.5 rounded-lg p-2 transition-colors ${
+                    nameplate === plateId ? 'bg-primary/10 ring-1 ring-primary/50' : 'hover:bg-surface-hover'
+                  }`}
+                  aria-label={NAMEPLATE_LABELS[plateId]}
+                >
+                  <NameplatePreview nameplate={plateId} />
+                  <span
+                    className={`text-[11px] ${nameplate === plateId ? 'text-white' : 'text-text-description'}`}
+                  >
+                    {NAMEPLATE_LABELS[plateId]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-description">
               <StatusDot status={status} size={10} />
               Estado
             </span>
@@ -242,6 +292,15 @@ function CheckIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+function PlateIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
+      <path d="M2.5 14.5h19" opacity="0.5" />
     </svg>
   );
 }

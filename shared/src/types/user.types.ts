@@ -15,6 +15,20 @@ export const AVATAR_FRAME_IDS = [
 
 export type AvatarFrameId = (typeof AVATAR_FRAME_IDS)[number];
 
+export const NAMEPLATE_IDS = [
+  'none',
+  'dragon',
+  'serpent',
+  'phoenix',
+  'wolf',
+  'tiger',
+  'warrior',
+  'galaxy',
+  'kraken',
+] as const;
+
+export type NameplateId = (typeof NAMEPLATE_IDS)[number];
+
 export interface User {
   id: string;
   username: string;
@@ -24,6 +38,8 @@ export interface User {
   bio?: string;
   accentColor: string;
   avatarFrame: AvatarFrameId;
+  /** Placa animada que se muestra detrás de tu fila en Mensajes Directos (propia y ajena). */
+  nameplate: NameplateId;
   status: UserStatus;
   isOnline: boolean;
   createdAt: string;

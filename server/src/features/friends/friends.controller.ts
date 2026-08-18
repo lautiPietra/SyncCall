@@ -3,6 +3,8 @@ import { SOCKET_EVENTS } from '@synccall/shared';
 import type {
   FriendRemovedPayload,
   FriendRequestAcceptedPayload,
+  FriendRequestCancelledPayload,
+  FriendRequestDeclinedPayload,
   FriendRequestNewPayload,
   RespondFriendRequestInput,
   SendFriendRequestInput,
@@ -50,13 +52,20 @@ export async function respondRequest(req: Request, res: Response): Promise<void>
       },
     };
     tryGetIo()?.to(`user:${result.fromUserId}`).emit(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, payload);
+  } else {
+    const payload: FriendRequestDeclinedPayload = { requestId: req.params.id };
+    tryGetIo()?.to(`user:${result.fromUserId}`).emit(SOCKET_EVENTS.FRIEND_REQUEST_DECLINED, payload);
   }
 
   res.json({ status: result.status });
 }
 
 export async function cancelRequest(req: Request, res: Response): Promise<void> {
-  await friendsService.cancelFriendRequest(req.params.id, req.user!._id.toString());
+  const { toUserId } = await friendsService.cancelFriendRequest(req.params.id, req.user!._id.toString());
+
+  const payload: FriendRequestCancelledPayload = { requestId: req.params.id };
+  tryGetIo()?.to(`user:${toUserId}`).emit(SOCKET_EVENTS.FRIEND_REQUEST_CANCELLED, payload);
+
   res.status(204).send();
 }
 
