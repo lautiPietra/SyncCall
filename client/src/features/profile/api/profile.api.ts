@@ -16,3 +16,7 @@ export function uploadBanner(file: File): Promise<{ user: User }> {
   formData.append('banner', file);
   return apiFetch('/users/me/banner', { method: 'POST', body: formData });
 }
+
+export function deleteAccount(username: string): Promise<void> {
+  return apiFetch('/users/me', { method: 'DELETE', body: { username } });
+}

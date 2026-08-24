@@ -1,11 +1,22 @@
 import type { Request, Response } from 'express';
-import type { PublicUser, UpdateProfileInput, SearchUsersQueryInput } from '@synccall/shared';
+import type { PublicUser, UpdateProfileInput, SearchUsersQueryInput, DeleteAccountInput } from '@synccall/shared';
+import { SOCKET_EVENTS } from '@synccall/shared';
+import type {
+  FriendRemovedPayload,
+  FriendRequestCancelledPayload,
+  GroupDeletedPayload,
+  GroupMemberRemovedPayload,
+  GroupMessageNewPayload,
+} from '@synccall/shared';
 import type { UploadApiResponse } from 'cloudinary';
 import { User } from './users.model';
 import type { UserDocument } from './users.types';
+import * as usersService from './users.service';
+import * as groupMessagesService from '../groups/groupMessages.service';
 import { cloudinary } from '../../config/cloudinary';
 import { ApiError } from '../../lib/ApiError';
 import { broadcastProfileUpdate, broadcastStatusChange } from '../../sockets';
+import { leaveUserFromGroupRoom, tryGetIo } from '../../sockets/io';
 import { PUBLIC_USER_FIELDS } from '../friends/friends.service';
 
 function toPublicUser(user: UserDocument): PublicUser {
@@ -49,7 +60,7 @@ export async function updateMe(req: Request, res: Response): Promise<void> {
     await broadcastProfileUpdate(user._id.toString(), toPublicUser(user));
   }
 
-  res.json({ user });
+  res.json({ user: user ? usersService.toSelfUser(user) : null });
 }
 
 function isDuplicateKeyError(err: unknown): boolean {
@@ -62,6 +73,8 @@ export async function searchUsers(req: Request, res: Response): Promise<void> {
   const users = await User.find({
     username: { $regex: `^${escapeRegex(q)}`, $options: 'i' },
     _id: { $ne: req.user!._id },
+    deletedAt: null,
+    visibleInSearch: { $ne: false },
   })
     .select(PUBLIC_USER_FIELDS)
     .limit(20);
@@ -133,7 +146,49 @@ async function uploadUserImage(
     await broadcastProfileUpdate(user._id.toString(), toPublicUser(user));
   }
 
-  res.json({ user });
+  res.json({ user: user ? usersService.toSelfUser(user) : null });
+}
+
+export async function deleteAccount(req: Request, res: Response): Promise<void> {
+  const userId = req.user!._id.toString();
+  const { username } = req.body as DeleteAccountInput;
+
+  if (username !== req.user!.username) {
+    throw new ApiError(400, 'El nombre de usuario no coincide');
+  }
+
+  const { deletedGroups, leftGroups, removedFriendIds, removedFriendRequests } = await usersService.deleteAccount(userId);
+
+  const io = tryGetIo();
+
+  for (const { groupId, memberIds } of deletedGroups) {
+    memberIds.forEach((uid) => {
+      io?.to(`user:${uid}`).emit(SOCKET_EVENTS.GROUP_DELETED, { groupId, reason: 'deleted' } satisfies GroupDeletedPayload);
+      leaveUserFromGroupRoom(uid, groupId);
+    });
+  }
+
+  for (const { groupId, remainingMemberIds } of leftGroups) {
+    io?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, { groupId, userId } satisfies GroupMemberRemovedPayload);
+    leaveUserFromGroupRoom(userId, groupId);
+
+    const systemMessage = await groupMessagesService.createGroupSystemMessage(groupId, userId, 'member_left', remainingMemberIds);
+    if (systemMessage) {
+      io?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MESSAGE_NEW, { message: systemMessage.message } satisfies GroupMessageNewPayload);
+    }
+  }
+
+  removedFriendIds.forEach((friendId) => {
+    io?.to(`user:${friendId}`).emit(SOCKET_EVENTS.FRIEND_REMOVED, { friendId: userId } satisfies FriendRemovedPayload);
+  });
+
+  removedFriendRequests.forEach(({ requestId, counterpartId }) => {
+    io?.to(`user:${counterpartId}`).emit(SOCKET_EVENTS.FRIEND_REQUEST_CANCELLED, { requestId } satisfies FriendRequestCancelledPayload);
+  });
+
+  res.clearCookie('token', { path: '/' });
+  res.clearCookie('refreshToken', { path: '/api/auth' });
+  res.status(204).send();
 }
 
 function extractCloudinaryPublicId(url: string): string | null {

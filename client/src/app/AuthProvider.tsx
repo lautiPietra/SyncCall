@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { ProfileUpdatedPayload, User } from '@synccall/shared';
 import { SOCKET_EVENTS } from '@synccall/shared';
 import { fetchMe, logout as logoutRequest } from '../features/auth/api/auth.api';
+import { deleteAccount as deleteAccountRequest } from '../features/profile/api/profile.api';
+import { applyAccentColor, resetAccentColor } from '../lib/accentColor';
 import { socket } from '../lib/socketClient';
 
 interface AuthContextValue {
@@ -9,6 +11,7 @@ interface AuthContextValue {
   loading: boolean;
   setUser: (user: User | null) => void;
   logout: () => Promise<void>;
+  deleteAccount: (username: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -23,6 +26,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (user?.accentColor) {
+      applyAccentColor(user.accentColor);
+    } else {
+      resetAccentColor();
+    }
+  }, [user?.accentColor]);
 
   useEffect(() => {
     // Si guardás tu perfil en otra pestaña/dispositivo, esto lo refleja acá sin recargar
@@ -41,8 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  async function deleteAccount(username: string): Promise<void> {
+    await deleteAccountRequest(username);
+    setUser(null);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, setUser, logout }}>
+    <AuthContext.Provider value={{ user, loading, setUser, logout, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );

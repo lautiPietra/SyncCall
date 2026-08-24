@@ -50,3 +50,29 @@ export function playMessageNotificationSound(): void {
   playTone(ctx, 740, now, 0.16, 0.16); // F#5
   playTone(ctx, 988, now + 0.09, 0.22, 0.16); // B5
 }
+
+/**
+ * Ringtone de llamada entrante: mismo sintetizador que el "ding" de mensajes, pero en loop
+ * (dos tonos cortos repetidos, al estilo tono de teléfono clásico) hasta que se llame al
+ * handle de corte devuelto (al aceptar, rechazar, cancelar o que se corte la llamada).
+ */
+export function playRingtone(): () => void {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return () => {};
+  }
+  if (ctx.state === 'suspended') {
+    void ctx.resume().catch(() => {});
+  }
+
+  const RING_INTERVAL_MS = 2500;
+  const triggerRing = (): void => {
+    const now = ctx.currentTime;
+    playTone(ctx, 600, now, 0.35, 0.14);
+    playTone(ctx, 600, now + 0.45, 0.35, 0.14);
+  };
+
+  triggerRing();
+  const intervalId = window.setInterval(triggerRing, RING_INTERVAL_MS);
+  return () => window.clearInterval(intervalId);
+}

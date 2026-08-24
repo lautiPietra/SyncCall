@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Channel, Group, GroupMemberDetail } from '@synccall/shared';
+import type { Channel, Group, GroupMemberDetail, GroupMessageNewPayload } from '@synccall/shared';
 import { SOCKET_EVENTS } from '@synccall/shared';
+import { useAuth } from '../../../app/AuthProvider';
+import { useGroups } from '../../../app/GroupsProvider';
 import { ApiClientError } from '../../../lib/apiClient';
 import { socket } from '../../../lib/socketClient';
 import * as groupsApi from '../api/groups.api';
@@ -11,6 +13,8 @@ import * as groupsApi from '../api/groups.api';
  * mantiene su propia copia, ambas convergen vía los mismos eventos de socket.
  */
 export function useGroupDetail(groupId: string | null) {
+  const { user } = useAuth();
+  const { activeChannelId } = useGroups();
   const [group, setGroup] = useState<(Group & { channels: Channel[] }) | null>(null);
   const [members, setMembers] = useState<GroupMemberDetail[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,19 +59,37 @@ export function useGroupDetail(groupId: string | null) {
       void refresh();
     }
 
+    // El canal activo se marca leído aparte (GroupChannelPage llama a markChannelRead al
+    // montar); acá solo sumamos para los canales que no son el que está abierto ahora mismo.
+    function handleMessageNew(payload: GroupMessageNewPayload): void {
+      const { message } = payload;
+      if (message.group !== groupId || message.sender === user?.id || message.channel === activeChannelId) {
+        return;
+      }
+      setGroup((prev) =>
+        prev ? { ...prev, channels: prev.channels.map((c) => (c.id === message.channel ? { ...c, unreadCount: c.unreadCount + 1 } : c)) } : prev,
+      );
+    }
+
     socket.on(SOCKET_EVENTS.GROUP_UPDATED, handleGroupUpdated);
     socket.on(SOCKET_EVENTS.GROUP_CHANNEL_CREATED, handleRelevantChange);
+    socket.on(SOCKET_EVENTS.GROUP_CHANNEL_UPDATED, handleRelevantChange);
     socket.on(SOCKET_EVENTS.GROUP_CHANNEL_DELETED, handleRelevantChange);
     socket.on(SOCKET_EVENTS.GROUP_MEMBER_ADDED, handleRelevantChange);
     socket.on(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, handleRelevantChange);
+    socket.on(SOCKET_EVENTS.GROUP_MEMBER_ROLE_UPDATED, handleRelevantChange);
+    socket.on(SOCKET_EVENTS.GROUP_MESSAGE_NEW, handleMessageNew);
     return () => {
       socket.off(SOCKET_EVENTS.GROUP_UPDATED, handleGroupUpdated);
       socket.off(SOCKET_EVENTS.GROUP_CHANNEL_CREATED, handleRelevantChange);
+      socket.off(SOCKET_EVENTS.GROUP_CHANNEL_UPDATED, handleRelevantChange);
       socket.off(SOCKET_EVENTS.GROUP_CHANNEL_DELETED, handleRelevantChange);
       socket.off(SOCKET_EVENTS.GROUP_MEMBER_ADDED, handleRelevantChange);
       socket.off(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, handleRelevantChange);
+      socket.off(SOCKET_EVENTS.GROUP_MEMBER_ROLE_UPDATED, handleRelevantChange);
+      socket.off(SOCKET_EVENTS.GROUP_MESSAGE_NEW, handleMessageNew);
     };
-  }, [groupId, refresh]);
+  }, [groupId, refresh, user?.id, activeChannelId]);
 
   return { group, channels: group?.channels ?? [], members, loading, error, refresh };
 }

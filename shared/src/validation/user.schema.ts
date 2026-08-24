@@ -25,11 +25,18 @@ export const updateProfileSchema = z.object({
   avatarFrame: avatarFrameSchema.optional(),
   nameplate: nameplateSchema.optional(),
   status: userStatusSchema.optional(),
+  allowFriendRequests: z.boolean().optional(),
+  visibleInSearch: z.boolean().optional(),
 });
 
 export const searchUsersQuerySchema = z.object({
   q: z.string().min(1).max(20),
 });
 
+export const deleteAccountSchema = z.object({
+  username: z.string().min(1),
+});
+
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type SearchUsersQueryInput = z.infer<typeof searchUsersQuerySchema>;
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;

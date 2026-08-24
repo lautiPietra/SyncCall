@@ -1,11 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { ConversationSummary, MessageNewPayload, MessageUpdatedPayload, ProfileUpdatedPayload } from '@synccall/shared';
+import type { ConversationSummary, FriendRemovedPayload, MessageNewPayload, MessageUpdatedPayload, ProfileUpdatedPayload } from '@synccall/shared';
 import { SOCKET_EVENTS } from '@synccall/shared';
 import { useAuth } from './AuthProvider';
 import { useNotificationPreferences } from './NotificationPreferencesProvider';
+import { useToast } from './ToastProvider';
 import { ApiClientError } from '../lib/apiClient';
 import { socket } from '../lib/socketClient';
 import { playMessageNotificationSound } from '../lib/notificationSound';
+import { showDesktopNotification } from '../lib/desktopNotifications';
 import * as conversationsApi from '../features/chat/api/conversations.api';
 
 interface ConversationsContextValue {
@@ -26,7 +28,8 @@ const ConversationsContext = createContext<ConversationsContextValue | undefined
 export function ConversationsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id;
-  const { mutedAll, mutedFriendIds } = useNotificationPreferences();
+  const { mutedAll, mutedFriendIds, desktopNotificationsEnabled } = useNotificationPreferences();
+  const { showToast } = useToast();
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,11 +38,16 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
   // Ref en paralelo al state: el listener de sockets se registra una sola vez (no en cada
   // cambio de chat activo) y necesita leer siempre el valor más reciente sin re-suscribirse.
   const activeConversationIdRef = useRef<string | null>(null);
+  const conversationsRef = useRef<ConversationSummary[]>([]);
 
   const setActiveConversationId = useCallback((conversationId: string | null) => {
     activeConversationIdRef.current = conversationId;
     setActiveConversationIdState(conversationId);
   }, []);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -75,6 +83,14 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
         !isMine && !mutedAll && !mutedFriendIds.has(message.sender) && message.conversation !== activeConversationIdRef.current;
       if (shouldNotify) {
         playMessageNotificationSound();
+        if (desktopNotificationsEnabled) {
+          const otherUser = conversationsRef.current.find((c) => c.id === message.conversation)?.otherUser;
+          showDesktopNotification(otherUser?.displayName ?? 'Nuevo mensaje', {
+            body: message.type === 'text' ? message.content : message.type === 'image' ? 'Te mandó una imagen' : 'Te mandó un audio',
+            icon: otherUser?.avatarUrl,
+            tag: message.conversation,
+          });
+        }
       }
 
       setConversations((prev) => {
@@ -104,6 +120,13 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
         next.unshift(updated);
         return next;
       });
+    }
+
+    // Al dejar de ser amigos (lo hayas hecho vos o la otra persona) el server ya oculta el DM
+    // para los dos; acá lo sacamos también de este lado sin esperar a un refresh, sea cual sea
+    // quien haya iniciado la acción (el server manda este mismo evento a ambos).
+    function handleFriendRemoved(payload: FriendRemovedPayload): void {
+      setConversations((prev) => prev.filter((c) => c.otherUser.id !== payload.friendId));
     }
 
     // El otro lado de una conversación (avatar, nombre, marco, placa, etc.) puede cambiar su
@@ -142,14 +165,16 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
     }
 
     socket.on(SOCKET_EVENTS.MESSAGE_NEW, handleNewMessage);
+    socket.on(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendRemoved);
     socket.on(SOCKET_EVENTS.PROFILE_UPDATED, handleProfileUpdated);
     socket.on(SOCKET_EVENTS.MESSAGE_UPDATED, handleMessageUpdated);
     return () => {
       socket.off(SOCKET_EVENTS.MESSAGE_NEW, handleNewMessage);
+      socket.off(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendRemoved);
       socket.off(SOCKET_EVENTS.PROFILE_UPDATED, handleProfileUpdated);
       socket.off(SOCKET_EVENTS.MESSAGE_UPDATED, handleMessageUpdated);
     };
-  }, [refresh, userId, mutedAll, mutedFriendIds]);
+  }, [refresh, userId, mutedAll, mutedFriendIds, desktopNotificationsEnabled]);
 
   async function hide(conversationId: string): Promise<void> {
     const previous = conversations;
@@ -158,7 +183,7 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
       await conversationsApi.hideConversation(conversationId);
     } catch (err) {
       setConversations(previous);
-      setError(err instanceof ApiClientError ? err.message : 'No se pudo eliminar la conversación');
+      showToast(err instanceof ApiClientError ? err.message : 'No se pudo eliminar la conversación', 'error');
     }
   }
 

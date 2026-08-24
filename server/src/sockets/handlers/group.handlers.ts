@@ -53,7 +53,9 @@ async function handleGroupMessageSend(io: Server, userId: string, rawPayload: Gr
   }
 
   try {
-    const { message, groupId } = await groupMessagesService.sendGroupMessage(parsed.data.channelId, userId, parsed.data.content);
+    const { message, groupId } = await groupMessagesService.sendGroupMessage(parsed.data.channelId, userId, {
+      content: parsed.data.content,
+    });
     const payload: GroupMessageNewPayload = { message };
     io.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MESSAGE_NEW, payload);
   } catch (err) {

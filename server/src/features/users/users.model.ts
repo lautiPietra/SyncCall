@@ -20,6 +20,9 @@ const userSchema = new Schema<UserDocument>({
   },
   isOnline: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
+  deletedAt: { type: Date, default: null },
+  allowFriendRequests: { type: Boolean, default: true },
+  visibleInSearch: { type: Boolean, default: true },
 });
 
 userSchema.index({ googleId: 1 }, { unique: true, sparse: true });
@@ -33,6 +36,7 @@ userSchema.set('toJSON', {
     delete obj.__v;
     delete obj.googleId;
     delete obj.githubId;
+    delete obj.deletedAt;
     return obj;
   },
 });

@@ -111,7 +111,7 @@ describe('administración del grupo (solo el dueño)', () => {
   it('un no-dueño no puede actualizar el grupo', async () => {
     const { member, group } = await setup();
     await expect(groupsService.updateGroup(group._id.toString(), member._id.toString(), { name: 'Nuevo nombre' })).rejects.toThrow(
-      'Solo el dueño del grupo puede hacer esto',
+      'Solo el dueño o un administrador del grupo puede hacer esto',
     );
   });
 
@@ -143,6 +143,29 @@ describe('administración del grupo (solo el dueño)', () => {
     expect(remaining).toBe(1);
   });
 
+  it('el dueño puede renombrar un canal, pero no a un nombre ya usado', async () => {
+    const { owner, group, defaultChannel } = await setup();
+    const channel = await groupsService.createChannel(group._id.toString(), owner._id.toString(), 'random');
+
+    const renamed = await groupsService.renameChannel(group._id.toString(), channel._id.toString(), owner._id.toString(), 'renombrado');
+    expect(renamed.name).toBe('renombrado');
+
+    await expect(
+      groupsService.renameChannel(group._id.toString(), channel._id.toString(), owner._id.toString(), 'general'),
+    ).rejects.toThrow('Ya existe un canal con ese nombre');
+    // Case-insensitive: 'GENERAL' también choca con el #general existente (defaultChannel).
+    await expect(
+      groupsService.renameChannel(group._id.toString(), defaultChannel._id.toString(), owner._id.toString(), 'renombrado'),
+    ).rejects.toThrow('Ya existe un canal con ese nombre');
+  });
+
+  it('un no-dueño no puede renombrar un canal', async () => {
+    const { member, group, defaultChannel } = await setup();
+    await expect(
+      groupsService.renameChannel(group._id.toString(), defaultChannel._id.toString(), member._id.toString(), 'nuevo-nombre'),
+    ).rejects.toThrow('Solo el dueño o un administrador del grupo puede hacer esto');
+  });
+
   it('no se puede borrar el único canal del grupo', async () => {
     const { owner, group, defaultChannel } = await setup();
     await expect(
@@ -171,14 +194,14 @@ describe('administración del grupo (solo el dueño)', () => {
 });
 
 describe('membresía', () => {
-  it('el dueño no puede sacarse a sí mismo (tiene que usar leaveGroup, que también lo rechaza)', async () => {
+  it('el dueño no puede sacarse a sí mismo vía removeMember, ni abandonar el grupo vía leaveGroup', async () => {
     const owner = await createTestUser();
     const friend = await createTestUser();
     await makeFriends(owner._id.toString(), friend._id.toString());
     const { group } = await groupsService.createGroup(owner._id.toString(), 'Grupo', [friend._id.toString()]);
 
     await expect(groupsService.removeMember(group._id.toString(), owner._id.toString(), owner._id.toString())).rejects.toThrow(
-      'usá "Salir del grupo"',
+      'No se puede sacar al dueño del grupo',
     );
     await expect(groupsService.leaveGroup(group._id.toString(), owner._id.toString())).rejects.toThrow(
       'El dueño no puede abandonar el grupo',
@@ -195,5 +218,76 @@ describe('membresía', () => {
     await groupsService.leaveGroup(group._id.toString(), friend._id.toString());
     const refreshed = await Group.findById(group._id);
     expect(refreshed?.members).toHaveLength(1);
+  });
+});
+
+describe('rol de administrador', () => {
+  async function setup() {
+    const owner = await createTestUser();
+    const admin = await createTestUser();
+    const member = await createTestUser();
+    const outsider = await createTestUser();
+    await makeFriends(owner._id.toString(), admin._id.toString());
+    await makeFriends(owner._id.toString(), member._id.toString());
+    await makeFriends(owner._id.toString(), outsider._id.toString());
+    const { group, defaultChannel } = await groupsService.createGroup(owner._id.toString(), 'Grupo', [
+      admin._id.toString(),
+      member._id.toString(),
+    ]);
+    await acceptInvite(group._id.toString(), admin._id.toString());
+    await acceptInvite(group._id.toString(), member._id.toString());
+    await groupsService.setMemberRole(group._id.toString(), owner._id.toString(), admin._id.toString(), 'admin');
+    return { owner, admin, member, outsider, group, defaultChannel };
+  }
+
+  it('solo el dueño puede ascender/descender administradores', async () => {
+    const { owner, admin, member, group } = await setup();
+
+    await expect(groupsService.setMemberRole(group._id.toString(), admin._id.toString(), member._id.toString(), 'admin')).rejects.toThrow(
+      'Solo el dueño del grupo puede hacer esto',
+    );
+    await expect(groupsService.setMemberRole(group._id.toString(), owner._id.toString(), owner._id.toString(), 'admin')).rejects.toThrow(
+      'El dueño ya administra el grupo',
+    );
+
+    const demoted = await groupsService.setMemberRole(group._id.toString(), owner._id.toString(), admin._id.toString(), 'member');
+    expect(demoted.role).toBe('member');
+  });
+
+  it('un admin puede editar el grupo, crear/borrar canales, invitar y sacar a un miembro normal', async () => {
+    const { admin, member, outsider, group, defaultChannel } = await setup();
+    const adminId = admin._id.toString();
+    await makeFriends(adminId, outsider._id.toString());
+
+    const updated = await groupsService.updateGroup(group._id.toString(), adminId, { name: 'Editado por admin' });
+    expect(updated.name).toBe('Editado por admin');
+
+    const channel = await groupsService.createChannel(group._id.toString(), adminId, 'moderacion');
+    await groupsService.deleteChannel(group._id.toString(), channel._id.toString(), adminId);
+
+    await groupsService.inviteMember(group._id.toString(), adminId, outsider._id.toString());
+    await acceptInvite(group._id.toString(), outsider._id.toString());
+
+    await groupsService.removeMember(group._id.toString(), adminId, member._id.toString());
+    const refreshed = await Group.findById(group._id);
+    expect(refreshed?.members.some((m) => m.user.toString() === member._id.toString())).toBe(false);
+    // defaultChannel sigue existiendo (no se puede borrar el único canal): confirma que el borrado de arriba fue el nuevo, no #general.
+    expect(await Channel.exists({ _id: defaultChannel._id })).toBeTruthy();
+  });
+
+  it('un admin no puede sacar a otro admin ni borrar el grupo', async () => {
+    const { admin, group } = await setup();
+    const secondOwnerFriend = await createTestUser();
+    await makeFriends((await User.findById(group.owner))!._id.toString(), secondOwnerFriend._id.toString());
+    await groupsService.inviteMember(group._id.toString(), group.owner.toString(), secondOwnerFriend._id.toString());
+    await acceptInvite(group._id.toString(), secondOwnerFriend._id.toString());
+    await groupsService.setMemberRole(group._id.toString(), group.owner.toString(), secondOwnerFriend._id.toString(), 'admin');
+
+    await expect(
+      groupsService.removeMember(group._id.toString(), admin._id.toString(), secondOwnerFriend._id.toString()),
+    ).rejects.toThrow('Solo el dueño puede sacar a un administrador');
+    await expect(groupsService.deleteGroup(group._id.toString(), admin._id.toString())).rejects.toThrow(
+      'Solo el dueño del grupo puede hacer esto',
+    );
   });
 });

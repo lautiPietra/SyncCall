@@ -1,7 +1,9 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
+import { requestDesktopNotificationPermission } from '../lib/desktopNotifications';
 
 const MUTED_ALL_KEY = 'synccall.notifications.mutedAll';
 const MUTED_FRIENDS_KEY = 'synccall.notifications.mutedFriendIds';
+const DESKTOP_ENABLED_KEY = 'synccall.notifications.desktopEnabled';
 
 function readMutedAll(): boolean {
   try {
@@ -24,12 +26,25 @@ function readMutedFriendIds(): Set<string> {
   }
 }
 
+function readDesktopEnabled(): boolean {
+  try {
+    return localStorage.getItem(DESKTOP_ENABLED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 interface NotificationPreferencesContextValue {
   mutedAll: boolean;
   setMutedAll: (muted: boolean) => void;
   mutedFriendIds: Set<string>;
   isFriendMuted: (friendId: string) => boolean;
   setFriendMuted: (friendId: string, muted: boolean) => void;
+  /** Notificación nativa del navegador cuando llega un mensaje/invitación y la pestaña no está
+   * a la vista. Pedir el permiso es async (el usuario puede negarlo), por eso el setter devuelve
+   * si finalmente quedó activo o no. */
+  desktopNotificationsEnabled: boolean;
+  setDesktopNotificationsEnabled: (enabled: boolean) => Promise<boolean>;
 }
 
 const NotificationPreferencesContext = createContext<NotificationPreferencesContextValue | undefined>(undefined);
@@ -41,6 +56,7 @@ const NotificationPreferencesContext = createContext<NotificationPreferencesCont
 export function NotificationPreferencesProvider({ children }: { children: ReactNode }) {
   const [mutedAll, setMutedAllState] = useState(readMutedAll);
   const [mutedFriendIds, setMutedFriendIds] = useState<Set<string>>(readMutedFriendIds);
+  const [desktopNotificationsEnabled, setDesktopEnabledState] = useState(readDesktopEnabled);
 
   function setMutedAll(muted: boolean): void {
     setMutedAllState(muted);
@@ -72,11 +88,24 @@ export function NotificationPreferencesProvider({ children }: { children: ReactN
     return mutedFriendIds.has(friendId);
   }
 
+  async function setDesktopNotificationsEnabled(enabled: boolean): Promise<boolean> {
+    const finalValue = enabled ? (await requestDesktopNotificationPermission()) === 'granted' : false;
+    setDesktopEnabledState(finalValue);
+    try {
+      localStorage.setItem(DESKTOP_ENABLED_KEY, String(finalValue));
+    } catch {
+      // ídem: no persiste, pero no rompe la sesión actual.
+    }
+    return finalValue;
+  }
+
   const value: NotificationPreferencesContextValue = {
     mutedAll,
     setMutedAll,
     mutedFriendIds,
     isFriendMuted,
+    desktopNotificationsEnabled,
+    setDesktopNotificationsEnabled,
     setFriendMuted,
   };
 

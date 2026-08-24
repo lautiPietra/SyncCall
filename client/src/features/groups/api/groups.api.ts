@@ -1,6 +1,8 @@
 import type {
   Channel,
   GroupDetailResponse,
+  GroupMemberDetail,
+  GroupMessage,
   GroupMessagesPageResponse,
   GroupSummary,
   ListGroupInvitesResponse,
@@ -43,6 +45,10 @@ export function removeMember(groupId: string, userId: string): Promise<void> {
   return apiFetch(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' });
 }
 
+export function setMemberRole(groupId: string, userId: string, role: 'admin' | 'member'): Promise<{ member: GroupMemberDetail }> {
+  return apiFetch(`/groups/${groupId}/members/${userId}/role`, { method: 'PATCH', body: { role } });
+}
+
 export function listInvites(): Promise<ListGroupInvitesResponse> {
   return apiFetch('/groups/invites');
 }
@@ -67,6 +73,10 @@ export function createChannel(groupId: string, name: string): Promise<{ channel:
   return apiFetch(`/groups/${groupId}/channels`, { method: 'POST', body: { name } });
 }
 
+export function updateChannel(groupId: string, channelId: string, name: string): Promise<{ channel: Channel }> {
+  return apiFetch(`/groups/${groupId}/channels/${channelId}`, { method: 'PATCH', body: { name } });
+}
+
 export function deleteChannel(groupId: string, channelId: string): Promise<void> {
   return apiFetch(`/groups/${groupId}/channels/${channelId}`, { method: 'DELETE' });
 }
@@ -77,4 +87,24 @@ export function getChannelMessages(channelId: string, groupId: string, before?: 
     params.set('before', before);
   }
   return apiFetch(`/groups/${groupId}/channels/${channelId}/messages?${params.toString()}`);
+}
+
+export function markChannelRead(groupId: string, channelId: string): Promise<void> {
+  return apiFetch(`/groups/${groupId}/channels/${channelId}/read`, { method: 'POST' });
+}
+
+export function uploadChannelImage(groupId: string, channelId: string, file: File, caption?: string): Promise<{ message: GroupMessage }> {
+  const formData = new FormData();
+  formData.append('image', file);
+  if (caption) {
+    formData.append('caption', caption);
+  }
+  return apiFetch(`/groups/${groupId}/channels/${channelId}/media`, { method: 'POST', body: formData });
+}
+
+export function uploadChannelVoiceMessage(groupId: string, channelId: string, blob: Blob): Promise<{ message: GroupMessage }> {
+  const formData = new FormData();
+  const extension = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm';
+  formData.append('audio', blob, `voice-message.${extension}`);
+  return apiFetch(`/groups/${groupId}/channels/${channelId}/voice`, { method: 'POST', body: formData });
 }

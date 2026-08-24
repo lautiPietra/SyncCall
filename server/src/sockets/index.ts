@@ -17,6 +17,7 @@ import { setIo, tryGetIo } from './io';
 import { clearMessageBucket } from './messageRateLimiter';
 import { registerMessageHandlers } from './handlers/message.handlers';
 import { registerGroupHandlers } from './handlers/group.handlers';
+import { registerCallHandlers, handleCallDisconnect } from './handlers/call.handlers';
 
 function readCookie(header: string | undefined, name: string): string | undefined {
   if (!header) {
@@ -54,9 +55,11 @@ export function initSocket(httpServer: HttpServer): void {
     void handleConnect(io, userId, socket.id);
     registerMessageHandlers(io, socket, userId);
     registerGroupHandlers(io, socket, userId);
+    registerCallHandlers(io, socket, userId);
 
     socket.on('disconnect', () => {
       void handleDisconnect(io, userId, socket.id);
+      handleCallDisconnect(io, userId, socket.id);
     });
   });
 

@@ -15,6 +15,7 @@ import { useNotificationPreferences } from './NotificationPreferencesProvider';
 import { ApiClientError } from '../lib/apiClient';
 import { socket } from '../lib/socketClient';
 import { playMessageNotificationSound } from '../lib/notificationSound';
+import { showDesktopNotification } from '../lib/desktopNotifications';
 import * as groupsApi from '../features/groups/api/groups.api';
 
 interface GroupsContextValue {
@@ -29,6 +30,10 @@ interface GroupsContextValue {
   /** Invitaciones a grupos que todavía no respondiste. */
   invites: GroupInvitePreview[];
   respondInvite: (inviteId: string, status: 'accepted' | 'declined') => Promise<void>;
+  /** Seteado cuando un admin te expulsó de un grupo, para que un componente dentro del Router
+   * (que sí tiene navigate/location) muestre el toast y te saque de esa página si estabas ahí. */
+  kickedNotice: { groupId: string; groupName: string } | null;
+  clearKickedNotice: () => void;
 }
 
 const GroupsContext = createContext<GroupsContextValue | undefined>(undefined);
@@ -36,19 +41,25 @@ const GroupsContext = createContext<GroupsContextValue | undefined>(undefined);
 export function GroupsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id;
-  const { mutedAll } = useNotificationPreferences();
+  const { mutedAll, desktopNotificationsEnabled } = useNotificationPreferences();
 
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invites, setInvites] = useState<GroupInvitePreview[]>([]);
   const [activeChannelId, setActiveChannelIdState] = useState<string | null>(null);
+  const [kickedNotice, setKickedNotice] = useState<{ groupId: string; groupName: string } | null>(null);
   const activeChannelIdRef = useRef<string | null>(null);
+  const groupsRef = useRef<GroupSummary[]>([]);
 
   const setActiveChannelId = useCallback((channelId: string | null) => {
     activeChannelIdRef.current = channelId;
     setActiveChannelIdState(channelId);
   }, []);
+
+  useEffect(() => {
+    groupsRef.current = groups;
+  }, [groups]);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -80,22 +91,46 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       setGroups((prev) => (prev.some((g) => g.id === payload.group.id) ? prev : [payload.group, ...prev]));
     }
 
+    // El unreadCount del payload es 0 por default del lado del server (GROUP_UPDATED se manda a
+    // toda la sala y ese contador es por-usuario, no se puede calcular uno solo para todos): se
+    // preserva el que ya teníamos localmente en vez de pisarlo.
     function handleGroupUpdated(payload: GroupUpdatedPayload): void {
-      setGroups((prev) => prev.map((g) => (g.id === payload.group.id ? payload.group : g)));
+      setGroups((prev) => prev.map((g) => (g.id === payload.group.id ? { ...payload.group, unreadCount: g.unreadCount } : g)));
     }
 
-    // Se reusa tanto para "el grupo se borró" como para "te sacaron/te fuiste del grupo": en
-    // los dos casos, desde la perspectiva de este cliente, el grupo deja de estar disponible.
+    // Se reusa tanto para "el grupo se borró" como para "te fuiste"/"te expulsaron": en los
+    // 3 casos, desde la perspectiva de este cliente, el grupo deja de estar disponible. Solo el
+    // caso "te expulsaron" necesita aviso: si te fuiste vos, tu propia UI ya te sacó de la
+    // página; si se borró el grupo entero, tampoco lo pidieron acá.
     function handleGroupRemovedFromMyList(payload: GroupDeletedPayload): void {
+      if (payload.reason === 'kicked') {
+        const removedGroup = groupsRef.current.find((g) => g.id === payload.groupId);
+        setKickedNotice({ groupId: payload.groupId, groupName: removedGroup?.name ?? 'el grupo' });
+      }
       setGroups((prev) => prev.filter((g) => g.id !== payload.groupId));
     }
 
     function handleGroupMessageNew(payload: GroupMessageNewPayload): void {
       const { message } = payload;
       const isMine = message.sender === userId;
-      const shouldNotify = !isMine && !mutedAll && message.channel !== activeChannelIdRef.current;
+      const isActiveChannel = message.channel === activeChannelIdRef.current;
+      const shouldNotify = !isMine && !mutedAll && !isActiveChannel;
       if (shouldNotify) {
         playMessageNotificationSound();
+        if (desktopNotificationsEnabled && message.type !== 'system') {
+          const groupName = groupsRef.current.find((g) => g.id === message.group)?.name;
+          showDesktopNotification(`${message.senderInfo.displayName} en ${groupName ?? 'un grupo'}`, {
+            body: message.type === 'text' ? message.content : message.type === 'image' ? 'Mandó una imagen' : 'Mandó un audio',
+            icon: message.senderInfo.avatarUrl,
+            tag: message.channel,
+          });
+        }
+      }
+
+      // El canal activo se marca leído aparte (ver GroupChannelPage), así que acá no sumamos
+      // para no mostrar un contador que después el propio mount ya va a resetear.
+      if (!isMine && !isActiveChannel) {
+        setGroups((prev) => prev.map((g) => (g.id === message.group ? { ...g, unreadCount: g.unreadCount + 1 } : g)));
       }
     }
 
@@ -105,6 +140,12 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       setInvites((prev) => (prev.some((i) => i.id === payload.invite.id) ? prev : [payload.invite, ...prev]));
       if (!mutedAll) {
         playMessageNotificationSound();
+        if (desktopNotificationsEnabled) {
+          showDesktopNotification(`${payload.invite.invitedBy.displayName} te invitó a un grupo`, {
+            body: payload.invite.groupName,
+            icon: payload.invite.invitedBy.avatarUrl,
+          });
+        }
       }
     }
 
@@ -127,11 +168,13 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       socket.off(SOCKET_EVENTS.GROUP_INVITE_NEW, handleInviteNew);
       socket.off(SOCKET_EVENTS.GROUP_INVITE_CANCELLED, handleInviteCancelled);
     };
-  }, [userId, mutedAll]);
+  }, [userId, mutedAll, desktopNotificationsEnabled]);
 
   async function createGroup(name: string, memberIds: string[]): Promise<GroupSummary> {
     const { group } = await groupsApi.createGroup(name, memberIds);
-    setGroups((prev) => [group, ...prev]);
+    // El servidor también emite GROUP_CREATED por socket al dueño; si ese evento llega antes
+    // de que resuelva esta promesa, el grupo ya está en el estado y no hay que duplicarlo.
+    setGroups((prev) => (prev.some((g) => g.id === group.id) ? prev : [group, ...prev]));
     return group;
   }
 
@@ -153,6 +196,8 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     setActiveChannelId,
     invites,
     respondInvite,
+    kickedNotice,
+    clearKickedNotice: () => setKickedNotice(null),
   };
 
   return <GroupsContext.Provider value={value}>{children}</GroupsContext.Provider>;

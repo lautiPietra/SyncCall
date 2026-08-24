@@ -12,7 +12,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
 
     const payload = verifyJwt(token);
     const user = await User.findById(payload.sub);
-    if (!user) {
+    if (!user || user.deletedAt) {
       throw new ApiError(401, 'No autenticado');
     }
 

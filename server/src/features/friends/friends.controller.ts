@@ -78,8 +78,11 @@ export async function removeFriend(req: Request, res: Response): Promise<void> {
   const userId = req.user!._id.toString();
   const { otherUserId } = await friendsService.removeFriend(userId, req.params.id);
 
-  const payload: FriendRemovedPayload = { friendId: userId };
-  tryGetIo()?.to(`user:${otherUserId}`).emit(SOCKET_EVENTS.FRIEND_REMOVED, payload);
+  // Se manda a los dos lados (no solo al que no inició la acción): así ambos clientes sacan
+  // en vivo el DM de "Mensajes directos" sin esperar a un refresh, sea quien sea el que borró.
+  const io = tryGetIo();
+  io?.to(`user:${otherUserId}`).emit(SOCKET_EVENTS.FRIEND_REMOVED, { friendId: userId } satisfies FriendRemovedPayload);
+  io?.to(`user:${userId}`).emit(SOCKET_EVENTS.FRIEND_REMOVED, { friendId: otherUserId } satisfies FriendRemovedPayload);
 
   res.status(204).send();
 }

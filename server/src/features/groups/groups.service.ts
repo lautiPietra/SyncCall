@@ -4,6 +4,7 @@ import { Group, Channel } from './groups.model';
 import type { ChannelDocument, GroupDocument } from './groups.types';
 import { GroupInvite } from './groupInvites.model';
 import type { GroupInviteDocument } from './groupInvites.types';
+import { GroupChannelRead } from './groupChannelRead.model';
 import { GroupMessage } from './groupMessages.model';
 import { User } from '../users/users.model';
 import { areFriends, PUBLIC_USER_FIELDS } from '../friends/friends.service';
@@ -23,6 +24,22 @@ export function assertMember(group: { members: { user: Types.ObjectId }[] }, use
 export function assertOwner(group: { owner: Types.ObjectId }, userId: string): void {
   if (group.owner.toString() !== userId) {
     throw new ApiError(403, 'Solo el dueño del grupo puede hacer esto');
+  }
+}
+
+function isOwnerOrAdmin(group: { owner: Types.ObjectId; members: { user: Types.ObjectId; role: string }[] }, userId: string): boolean {
+  if (group.owner.toString() === userId) {
+    return true;
+  }
+  return group.members.some((m) => m.user.toString() === userId && m.role === 'admin');
+}
+
+export function assertOwnerOrAdmin(
+  group: { owner: Types.ObjectId; members: { user: Types.ObjectId; role: string }[] },
+  userId: string,
+): void {
+  if (!isOwnerOrAdmin(group, userId)) {
+    throw new ApiError(403, 'Solo el dueño o un administrador del grupo puede hacer esto');
   }
 }
 
@@ -66,17 +83,24 @@ export async function listMyGroups(userId: string): Promise<GroupSummary[]> {
   }
 
   const groupIds = groups.map((g) => g._id);
-  const defaultChannels = await Channel.aggregate<{ _id: Types.ObjectId; channelId: Types.ObjectId }>([
-    { $match: { group: { $in: groupIds } } },
-    { $sort: { group: 1, createdAt: 1 } },
-    { $group: { _id: '$group', channelId: { $first: '$_id' } } },
+  const [defaultChannels, unreadTotals] = await Promise.all([
+    Channel.aggregate<{ _id: Types.ObjectId; channelId: Types.ObjectId }>([
+      { $match: { group: { $in: groupIds } } },
+      { $sort: { group: 1, createdAt: 1 } },
+      { $group: { _id: '$group', channelId: { $first: '$_id' } } },
+    ]),
+    GroupChannelRead.aggregate<{ _id: Types.ObjectId; total: number }>([
+      { $match: { group: { $in: groupIds }, user: new Types.ObjectId(userId) } },
+      { $group: { _id: '$group', total: { $sum: '$unreadCount' } } },
+    ]),
   ]);
   const defaultChannelByGroup = new Map(defaultChannels.map((c) => [c._id.toString(), c.channelId.toString()]));
+  const unreadByGroup = new Map(unreadTotals.map((u) => [u._id.toString(), u.total]));
 
   return groups
     .map((g) => {
       const defaultChannelId = defaultChannelByGroup.get(g._id.toString());
-      return defaultChannelId ? toGroupSummary(g, defaultChannelId) : null;
+      return defaultChannelId ? toGroupSummary(g, defaultChannelId, unreadByGroup.get(g._id.toString()) ?? 0) : null;
     })
     .filter((g): g is GroupSummary => g !== null);
 }
@@ -84,7 +108,12 @@ export async function listMyGroups(userId: string): Promise<GroupSummary[]> {
 export async function getGroupDetail(
   groupId: string,
   userId: string,
-): Promise<{ group: GroupDocument; members: GroupMemberDetail[]; channels: ChannelDocument[] }> {
+): Promise<{
+  group: GroupDocument;
+  members: GroupMemberDetail[];
+  channels: ChannelDocument[];
+  channelUnreadCounts: Map<string, number>;
+}> {
   const group = await Group.findById(groupId);
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
@@ -107,7 +136,12 @@ export async function getGroupDetail(
 
   const channels = await Channel.find({ group: groupId }).sort({ createdAt: 1 });
 
-  return { group, members, channels };
+  const reads = await GroupChannelRead.find({ user: userId, channel: { $in: channels.map((c) => c._id) } })
+    .select('channel unreadCount')
+    .lean();
+  const channelUnreadCounts = new Map(reads.map((r) => [r.channel.toString(), r.unreadCount]));
+
+  return { group, members, channels, channelUnreadCounts };
 }
 
 export async function updateGroup(
@@ -119,7 +153,7 @@ export async function updateGroup(
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
-  assertOwner(group, userId);
+  assertOwnerOrAdmin(group, userId);
 
   if (updates.name !== undefined) {
     group.name = updates.name;
@@ -141,7 +175,7 @@ export async function updateGroupPhoto(
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
-  assertOwner(group, userId);
+  assertOwnerOrAdmin(group, userId);
 
   const previousPhotoUrl = group.photoUrl;
   group.photoUrl = photoUrl;
@@ -159,6 +193,7 @@ export async function deleteGroup(groupId: string, userId: string): Promise<{ me
 
   const channelIds = (await Channel.find({ group: groupId }).select('_id').lean()).map((c) => c._id);
   await GroupMessage.deleteMany({ channel: { $in: channelIds } });
+  await GroupChannelRead.deleteMany({ group: groupId });
   await Channel.deleteMany({ group: groupId });
   await GroupInvite.deleteMany({ group: groupId });
   const memberIds = group.members.map((m) => m.user.toString());
@@ -173,7 +208,7 @@ export async function inviteMember(groupId: string, ownerId: string, newUserId: 
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
-  assertOwner(group, ownerId);
+  assertOwnerOrAdmin(group, ownerId);
 
   if (group.members.some((m) => m.user.toString() === newUserId)) {
     throw new ApiError(409, 'Ya es miembro del grupo');
@@ -277,7 +312,7 @@ export async function listPendingInvitesForGroup(groupId: string, ownerId: strin
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
-  assertOwner(group, ownerId);
+  assertOwnerOrAdmin(group, ownerId);
 
   const invites = await GroupInvite.find({ group: groupId }).sort({ createdAt: -1 });
   if (invites.length === 0) {
@@ -304,7 +339,7 @@ export async function cancelGroupInvite(groupId: string, ownerId: string, target
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
-  assertOwner(group, ownerId);
+  assertOwnerOrAdmin(group, ownerId);
 
   const result = await GroupInvite.deleteOne({ group: groupId, invitedUser: targetUserId });
   if (result.deletedCount === 0) {
@@ -312,25 +347,63 @@ export async function cancelGroupInvite(groupId: string, ownerId: string, target
   }
 }
 
-export async function removeMember(groupId: string, ownerId: string, targetUserId: string): Promise<GroupDocument> {
+export async function removeMember(groupId: string, actorId: string, targetUserId: string): Promise<GroupDocument> {
   const group = await Group.findById(groupId);
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
-  assertOwner(group, ownerId);
+  assertOwnerOrAdmin(group, actorId);
 
-  if (targetUserId === ownerId) {
-    throw new ApiError(400, 'No podés quitarte a vos mismo del grupo, usá "Salir del grupo"');
+  if (targetUserId === group.owner.toString()) {
+    throw new ApiError(400, 'No se puede sacar al dueño del grupo');
   }
 
   const index = group.members.findIndex((m) => m.user.toString() === targetUserId);
   if (index === -1) {
     throw new ApiError(404, 'Ese usuario no es miembro del grupo');
   }
+
+  if (group.members[index].role === 'admin' && group.owner.toString() !== actorId) {
+    throw new ApiError(403, 'Solo el dueño puede sacar a un administrador');
+  }
+
   group.members.splice(index, 1);
   await group.save();
+  await GroupChannelRead.deleteMany({ group: groupId, user: targetUserId });
 
   return group;
+}
+
+/** Solo el dueño puede ascender/descender administradores. */
+export async function setMemberRole(
+  groupId: string,
+  ownerId: string,
+  targetUserId: string,
+  role: 'admin' | 'member',
+): Promise<GroupMemberDetail> {
+  const group = await Group.findById(groupId);
+  if (!group) {
+    throw new ApiError(404, 'Grupo no encontrado');
+  }
+  assertOwner(group, ownerId);
+
+  if (targetUserId === group.owner.toString()) {
+    throw new ApiError(400, 'El dueño ya administra el grupo');
+  }
+
+  const member = group.members.find((m) => m.user.toString() === targetUserId);
+  if (!member) {
+    throw new ApiError(404, 'Ese usuario no es miembro del grupo');
+  }
+  member.role = role;
+  await group.save();
+
+  const userDoc = await User.findById(targetUserId).select(PUBLIC_USER_FIELDS).lean<LeanPublicUser>();
+  if (!userDoc) {
+    throw new ApiError(404, 'Usuario no encontrado');
+  }
+
+  return { user: toPublicUser(userDoc), role, joinedAt: member.joinedAt.toISOString() };
 }
 
 export async function leaveGroup(groupId: string, userId: string): Promise<GroupDocument> {
@@ -347,6 +420,7 @@ export async function leaveGroup(groupId: string, userId: string): Promise<Group
   const index = group.members.findIndex((m) => m.user.toString() === userId);
   group.members.splice(index, 1);
   await group.save();
+  await GroupChannelRead.deleteMany({ group: groupId, user: userId });
 
   return group;
 }
@@ -356,7 +430,7 @@ export async function createChannel(groupId: string, ownerId: string, name: stri
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
-  assertOwner(group, ownerId);
+  assertOwnerOrAdmin(group, ownerId);
 
   const existing = await Channel.findOne({ group: groupId, name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' } });
   if (existing) {
@@ -366,12 +440,39 @@ export async function createChannel(groupId: string, ownerId: string, name: stri
   return Channel.create({ group: groupId, name });
 }
 
+export async function renameChannel(groupId: string, channelId: string, actorId: string, name: string): Promise<ChannelDocument> {
+  const group = await Group.findById(groupId);
+  if (!group) {
+    throw new ApiError(404, 'Grupo no encontrado');
+  }
+  assertOwnerOrAdmin(group, actorId);
+
+  const channel = await Channel.findOne({ _id: channelId, group: groupId });
+  if (!channel) {
+    throw new ApiError(404, 'Canal no encontrado');
+  }
+
+  const existing = await Channel.findOne({
+    group: groupId,
+    _id: { $ne: channelId },
+    name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' },
+  });
+  if (existing) {
+    throw new ApiError(409, 'Ya existe un canal con ese nombre');
+  }
+
+  channel.name = name;
+  await channel.save();
+
+  return channel;
+}
+
 export async function deleteChannel(groupId: string, channelId: string, ownerId: string): Promise<void> {
   const group = await Group.findById(groupId);
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
-  assertOwner(group, ownerId);
+  assertOwnerOrAdmin(group, ownerId);
 
   const channel = await Channel.findOne({ _id: channelId, group: groupId });
   if (!channel) {
@@ -384,6 +485,7 @@ export async function deleteChannel(groupId: string, channelId: string, ownerId:
   }
 
   await GroupMessage.deleteMany({ channel: channelId });
+  await GroupChannelRead.deleteMany({ channel: channelId });
   await channel.deleteOne();
 }
 
@@ -398,6 +500,7 @@ export async function getDefaultChannelId(groupId: string): Promise<string> {
 export function toGroupSummary(
   group: { _id: Types.ObjectId; name: string; photoUrl?: string; owner: Types.ObjectId; members: { user: Types.ObjectId }[] },
   defaultChannelId: string,
+  unreadCount = 0,
 ): GroupSummary {
   return {
     id: group._id.toString(),
@@ -406,6 +509,7 @@ export function toGroupSummary(
     ownerId: group.owner.toString(),
     memberCount: group.members.length,
     defaultChannelId,
+    unreadCount,
   };
 }
 

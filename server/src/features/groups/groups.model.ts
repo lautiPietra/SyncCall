@@ -4,7 +4,7 @@ import type { ChannelDocument, GroupDocument, GroupMemberSubdocument } from './g
 const groupMemberSchema = new Schema<GroupMemberSubdocument>(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    role: { type: String, enum: ['owner', 'member'], default: 'member' },
+    role: { type: String, enum: ['owner', 'admin', 'member'], default: 'member' },
     joinedAt: { type: Date, default: Date.now },
   },
   { _id: false },

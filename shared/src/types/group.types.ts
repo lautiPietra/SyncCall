@@ -1,6 +1,6 @@
 import type { PublicUser } from './user.types';
 
-export type GroupRole = 'owner' | 'member';
+export type GroupRole = 'owner' | 'admin' | 'member';
 
 export interface Group {
   id: string;
@@ -17,6 +17,8 @@ export interface Channel {
   group: string;
   name: string;
   createdAt: string;
+  /** Mensajes sin leer de este canal para el usuario que pide el grupo. */
+  unreadCount: number;
 }
 
 /** Vista liviana para el listado "mis grupos" del sidebar: sin populate de miembros. */
@@ -28,6 +30,8 @@ export interface GroupSummary {
   memberCount: number;
   /** El canal más viejo del grupo (siempre #general): permite redirigir /groups/:id sin otra llamada. */
   defaultChannelId: string;
+  /** Suma de no leídos de todos los canales del grupo para el usuario que pide la lista. */
+  unreadCount: number;
 }
 
 export interface GroupMemberDetail {

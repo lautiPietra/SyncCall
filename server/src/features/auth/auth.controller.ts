@@ -7,6 +7,7 @@ import {
   verifyRefreshToken,
 } from './auth.service';
 import { User } from '../users/users.model';
+import { toSelfUser } from '../users/users.service';
 import { config } from '../../config/env';
 import { ApiError } from '../../lib/ApiError';
 
@@ -28,7 +29,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
     const { sub: userId } = verifyRefreshToken(refreshToken);
 
     const user = await User.findById(userId);
-    if (!user) {
+    if (!user || user.deletedAt) {
       throw new ApiError(401, 'No autenticado');
     }
 
@@ -46,5 +47,5 @@ export function logout(_req: Request, res: Response): void {
 }
 
 export function me(req: Request, res: Response): void {
-  res.json({ user: req.user });
+  res.json({ user: toSelfUser(req.user!) });
 }

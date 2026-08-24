@@ -7,6 +7,7 @@ import type {
   CreateGroupInput,
   GroupChannelCreatedPayload,
   GroupChannelDeletedPayload,
+  GroupChannelUpdatedPayload,
   GroupCreatedPayload,
   GroupDeletedPayload,
   GroupDetailResponse,
@@ -16,13 +17,17 @@ import type {
   GroupInviteResolvedPayload,
   GroupMemberAddedPayload,
   GroupMemberRemovedPayload,
+  GroupMemberRoleUpdatedPayload,
+  GroupMessageNewPayload,
   GroupUpdatedPayload,
   ListGroupInvitesResponse,
   ListGroupsResponse,
   ListPendingGroupInvitesResponse,
   PaginateGroupMessagesQueryInput,
   RespondGroupInviteInput,
+  UpdateChannelInput,
   UpdateGroupInput,
+  UpdateMemberRoleInput,
 } from '@synccall/shared';
 import * as groupsService from './groups.service';
 import * as groupMessagesService from './groupMessages.service';
@@ -38,7 +43,7 @@ export async function listGroups(req: Request, res: Response): Promise<void> {
 
 export async function getGroup(req: Request, res: Response): Promise<void> {
   const userId = req.user!._id.toString();
-  const { group, members, channels } = await groupsService.getGroupDetail(req.params.id, userId);
+  const { group, members, channels, channelUnreadCounts } = await groupsService.getGroupDetail(req.params.id, userId);
 
   const response: GroupDetailResponse = {
     group: {
@@ -54,6 +59,7 @@ export async function getGroup(req: Request, res: Response): Promise<void> {
         group: c.group.toString(),
         name: c.name,
         createdAt: c.createdAt.toISOString(),
+        unreadCount: channelUnreadCounts.get(c._id.toString()) ?? 0,
       })),
     },
     members,
@@ -155,7 +161,7 @@ export async function deleteGroup(req: Request, res: Response): Promise<void> {
 
   const io = tryGetIo();
   memberIds.forEach((uid) => {
-    io?.to(`user:${uid}`).emit(SOCKET_EVENTS.GROUP_DELETED, { groupId } satisfies GroupDeletedPayload);
+    io?.to(`user:${uid}`).emit(SOCKET_EVENTS.GROUP_DELETED, { groupId, reason: 'deleted' } satisfies GroupDeletedPayload);
     leaveUserFromGroupRoom(uid, groupId);
   });
 
@@ -240,25 +246,59 @@ export async function removeMember(req: Request, res: Response): Promise<void> {
   const ownerId = req.user!._id.toString();
   const groupId = req.params.id;
   const targetUserId = req.params.userId;
-  await groupsService.removeMember(groupId, ownerId, targetUserId);
+  const group = await groupsService.removeMember(groupId, ownerId, targetUserId);
 
   const io = tryGetIo();
   io?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, { groupId, userId: targetUserId } satisfies GroupMemberRemovedPayload);
-  io?.to(`user:${targetUserId}`).emit(SOCKET_EVENTS.GROUP_DELETED, { groupId } satisfies GroupDeletedPayload);
+  io?.to(`user:${targetUserId}`).emit(SOCKET_EVENTS.GROUP_DELETED, { groupId, reason: 'kicked' } satisfies GroupDeletedPayload);
   leaveUserFromGroupRoom(targetUserId, groupId);
 
+  const systemMessage = await groupMessagesService.createGroupSystemMessage(
+    groupId,
+    targetUserId,
+    'member_removed',
+    group.members.map((m) => m.user.toString()),
+  );
+  if (systemMessage) {
+    io?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MESSAGE_NEW, { message: systemMessage.message } satisfies GroupMessageNewPayload);
+  }
+
   res.status(204).send();
+}
+
+export async function setMemberRole(req: Request, res: Response): Promise<void> {
+  const ownerId = req.user!._id.toString();
+  const groupId = req.params.id;
+  const targetUserId = req.params.userId;
+  const { role } = req.body as UpdateMemberRoleInput;
+  const member = await groupsService.setMemberRole(groupId, ownerId, targetUserId, role);
+
+  tryGetIo()
+    ?.to(`group:${groupId}`)
+    .emit(SOCKET_EVENTS.GROUP_MEMBER_ROLE_UPDATED, { groupId, member } satisfies GroupMemberRoleUpdatedPayload);
+
+  res.json({ member });
 }
 
 export async function leaveGroup(req: Request, res: Response): Promise<void> {
   const userId = req.user!._id.toString();
   const groupId = req.params.id;
-  await groupsService.leaveGroup(groupId, userId);
+  const group = await groupsService.leaveGroup(groupId, userId);
 
   const io = tryGetIo();
   io?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, { groupId, userId } satisfies GroupMemberRemovedPayload);
-  io?.to(`user:${userId}`).emit(SOCKET_EVENTS.GROUP_DELETED, { groupId } satisfies GroupDeletedPayload);
+  io?.to(`user:${userId}`).emit(SOCKET_EVENTS.GROUP_DELETED, { groupId, reason: 'left' } satisfies GroupDeletedPayload);
   leaveUserFromGroupRoom(userId, groupId);
+
+  const systemMessage = await groupMessagesService.createGroupSystemMessage(
+    groupId,
+    userId,
+    'member_left',
+    group.members.map((m) => m.user.toString()),
+  );
+  if (systemMessage) {
+    io?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MESSAGE_NEW, { message: systemMessage.message } satisfies GroupMessageNewPayload);
+  }
 
   res.status(204).send();
 }
@@ -271,11 +311,39 @@ export async function createChannel(req: Request, res: Response): Promise<void> 
 
   const payload: GroupChannelCreatedPayload = {
     groupId,
-    channel: { id: channel._id.toString(), group: channel.group.toString(), name: channel.name, createdAt: channel.createdAt.toISOString() },
+    channel: {
+      id: channel._id.toString(),
+      group: channel.group.toString(),
+      name: channel.name,
+      createdAt: channel.createdAt.toISOString(),
+      unreadCount: 0,
+    },
   };
   tryGetIo()?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_CHANNEL_CREATED, payload);
 
   res.status(201).json({ channel: payload.channel });
+}
+
+export async function updateChannel(req: Request, res: Response): Promise<void> {
+  const userId = req.user!._id.toString();
+  const groupId = req.params.id;
+  const channelId = req.params.channelId;
+  const { name } = req.body as UpdateChannelInput;
+  const channel = await groupsService.renameChannel(groupId, channelId, userId, name);
+
+  const payload: GroupChannelUpdatedPayload = {
+    groupId,
+    channel: {
+      id: channel._id.toString(),
+      group: channel.group.toString(),
+      name: channel.name,
+      createdAt: channel.createdAt.toISOString(),
+      unreadCount: 0,
+    },
+  };
+  tryGetIo()?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_CHANNEL_UPDATED, payload);
+
+  res.json({ channel: payload.channel });
 }
 
 export async function deleteChannel(req: Request, res: Response): Promise<void> {
@@ -295,4 +363,79 @@ export async function getGroupMessages(req: Request, res: Response): Promise<voi
   const { limit, before } = req.query as unknown as PaginateGroupMessagesQueryInput;
   const result = await groupMessagesService.getGroupMessages(req.params.channelId, userId, { limit, before });
   res.json(result);
+}
+
+export async function markChannelRead(req: Request, res: Response): Promise<void> {
+  const userId = req.user!._id.toString();
+  await groupMessagesService.markChannelRead(req.params.channelId, userId);
+  res.status(204).send();
+}
+
+export async function uploadChannelMedia(req: Request, res: Response): Promise<void> {
+  if (!req.file) {
+    throw new ApiError(400, 'No se recibió ningún archivo');
+  }
+
+  const userId = req.user!._id.toString();
+  const channelId = req.params.channelId;
+  const caption = typeof req.body.caption === 'string' ? req.body.caption : '';
+
+  const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'synccall/groupMessages', resource_type: 'image' },
+      (error, uploadResult) => {
+        if (error || !uploadResult) {
+          reject(error ?? new Error('Error al subir la imagen'));
+          return;
+        }
+        resolve(uploadResult);
+      },
+    );
+    stream.end(req.file!.buffer);
+  });
+
+  const { message, groupId } = await groupMessagesService.sendGroupMessage(channelId, userId, {
+    content: caption,
+    mediaUrl: result.secure_url,
+  });
+
+  tryGetIo()?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MESSAGE_NEW, { message } satisfies GroupMessageNewPayload);
+
+  res.status(201).json({ message });
+}
+
+export async function uploadChannelVoice(req: Request, res: Response): Promise<void> {
+  if (!req.file) {
+    throw new ApiError(400, 'No se recibió ningún archivo');
+  }
+
+  const userId = req.user!._id.toString();
+  const channelId = req.params.channelId;
+
+  // Cloudinary trata el audio como resource_type "video" (mismo pipeline de transformación);
+  // de ahí sale `duration` sin que el cliente tenga que medirlo ni mandarlo por su cuenta.
+  const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'synccall/groupMessages', resource_type: 'video' },
+      (error, uploadResult) => {
+        if (error || !uploadResult) {
+          reject(error ?? new Error('Error al subir el audio'));
+          return;
+        }
+        resolve(uploadResult);
+      },
+    );
+    stream.end(req.file!.buffer);
+  });
+
+  const { message, groupId } = await groupMessagesService.sendGroupMessage(channelId, userId, {
+    content: '',
+    mediaUrl: result.secure_url,
+    type: 'audio',
+    durationSec: result.duration,
+  });
+
+  tryGetIo()?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_MESSAGE_NEW, { message } satisfies GroupMessageNewPayload);
+
+  res.status(201).json({ message });
 }

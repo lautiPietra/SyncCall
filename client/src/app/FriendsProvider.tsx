@@ -9,6 +9,7 @@ import type {
 } from '@synccall/shared';
 import { SOCKET_EVENTS } from '@synccall/shared';
 import { useAuth } from './AuthProvider';
+import { useToast } from './ToastProvider';
 import { ApiClientError } from '../lib/apiClient';
 import { socket } from '../lib/socketClient';
 import * as friendsApi from '../features/friends/api/friends.api';
@@ -33,6 +34,7 @@ const FriendsContext = createContext<FriendsContextValue | undefined>(undefined)
 export function FriendsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id;
+  const { showToast } = useToast();
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<FriendRequestPreview[]>([]);
@@ -112,14 +114,17 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     };
   }, [refresh]);
 
+  // El error de una acción puntual (ej. "este usuario no acepta solicitudes") se muestra como
+  // toast, no como el `error` persistente de más abajo: ese es para "no se pudo cargar la
+  // lista" y se queda pegado hasta el próximo refresh a propósito. Si esto fuera al mismo
+  // estado, el aviso de una acción vieja seguía viéndose al cambiar de pestaña sin desaparecer.
   async function withPending(id: string, action: () => Promise<void>): Promise<void> {
     setPendingIds((prev) => new Set(prev).add(id));
-    setError(null);
     try {
       await action();
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Algo salió mal, probá de nuevo');
+      showToast(err instanceof ApiClientError ? err.message : 'Algo salió mal, probá de nuevo', 'error');
     } finally {
       setPendingIds((prev) => {
         const next = new Set(prev);

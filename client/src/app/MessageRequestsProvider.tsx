@@ -8,6 +8,7 @@ import type {
 import { SOCKET_EVENTS } from '@synccall/shared';
 import { useAuth } from './AuthProvider';
 import { useConversations } from './ConversationsProvider';
+import { useToast } from './ToastProvider';
 import { ApiClientError } from '../lib/apiClient';
 import { socket } from '../lib/socketClient';
 import * as conversationsApi from '../features/chat/api/conversations.api';
@@ -27,6 +28,7 @@ export function MessageRequestsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id;
   const { refresh: refreshConversations } = useConversations();
+  const { showToast } = useToast();
 
   const [requests, setRequests] = useState<MessageRequestSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +95,6 @@ export function MessageRequestsProvider({ children }: { children: ReactNode }) {
 
   async function respond(conversationId: string, status: 'accepted' | 'declined'): Promise<void> {
     setRespondingIds((prev) => new Set(prev).add(conversationId));
-    setError(null);
     try {
       await conversationsApi.respondMessageRequest(conversationId, status);
       setRequests((prev) => prev.filter((r) => r.conversationId !== conversationId));
@@ -101,7 +102,7 @@ export function MessageRequestsProvider({ children }: { children: ReactNode }) {
         void refreshConversations();
       }
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Algo salió mal, probá de nuevo');
+      showToast(err instanceof ApiClientError ? err.message : 'Algo salió mal, probá de nuevo', 'error');
     } finally {
       setRespondingIds((prev) => {
         const next = new Set(prev);

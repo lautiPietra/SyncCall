@@ -48,6 +48,7 @@ export function FriendsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [openSidebarMenuId, setOpenSidebarMenuId] = useState<string | null>(null);
   const [viewingFriendId, setViewingFriendId] = useState<string | null>(null);
+  const [friendQuery, setFriendQuery] = useState('');
 
   const friendIds = new Set(friends.map((f) => f.user.id));
   const outgoingByUserId = new Map(outgoing.map((r) => [r.user.id, r.id]));
@@ -69,7 +70,15 @@ export function FriendsPage() {
     setOpenSidebarMenuId((current) => (current === friendshipId ? null : friendshipId));
   }
 
-  const visibleFriends = tab === 'online' ? onlineFriends : friends;
+  const baseFriends = tab === 'online' ? onlineFriends : friends;
+  const normalizedFriendQuery = friendQuery.trim().toLowerCase();
+  const visibleFriends = normalizedFriendQuery
+    ? baseFriends.filter(
+        ({ user }) =>
+          user.displayName.toLowerCase().includes(normalizedFriendQuery) ||
+          user.username.toLowerCase().includes(normalizedFriendQuery),
+      )
+    : baseFriends;
 
   return (
     <div className="flex min-h-full">
@@ -199,6 +208,17 @@ export function FriendsPage() {
 
         {(tab === 'all' || tab === 'online') && (
           <div className="mt-3 flex flex-col">
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-disabled">
+                <SearchIcon />
+              </span>
+              <Input
+                placeholder={tab === 'online' ? 'Buscar entre tus amigos en línea' : 'Buscar amigos'}
+                value={friendQuery}
+                onChange={(e) => setFriendQuery(e.target.value)}
+                className="w-full pl-9"
+              />
+            </div>
             <p className="px-1 py-3 text-sm font-semibold uppercase tracking-wide text-text-description">
               {tab === 'online' ? 'En línea' : 'Todos'} — {visibleFriends.length}
             </p>
@@ -209,9 +229,11 @@ export function FriendsPage() {
             ) : visibleFriends.length === 0 ? (
               <EmptyState
                 text={
-                  tab === 'online'
-                    ? 'No hay amigos en línea en este momento. ¡Volvé más tarde!'
-                    : 'Todavía no tenés amigos agregados. Buscalos en "Añadir amigo".'
+                  normalizedFriendQuery
+                    ? 'No encontramos amigos con ese nombre.'
+                    : tab === 'online'
+                      ? 'No hay amigos en línea en este momento. ¡Volvé más tarde!'
+                      : 'Todavía no tenés amigos agregados. Buscalos en "Añadir amigo".'
                 }
               />
             ) : (
@@ -596,7 +618,7 @@ function UserProfileModal({
           </button>
         </div>
 
-        <div className="flex flex-col items-center gap-2 overflow-y-auto px-8 pb-6 pt-0">
+        <div className="no-scrollbar flex flex-col items-center gap-2 overflow-y-auto px-8 pb-6 pt-0">
           <div className="-mt-10 rounded-full border-4 border-card">
             <FramedAvatar frame={user.avatarFrame} src={user.avatarUrl} alt={user.displayName} size={80} status={effectiveStatus} />
           </div>
@@ -661,7 +683,7 @@ function UserProfileModal({
               ) : mutualFriends.length === 0 ? (
                 <p className="text-sm text-text-disabled">Todavía no tienen amigos en común</p>
               ) : (
-                <div className="flex max-h-40 flex-col divide-y divide-surface-border/40 overflow-y-auto">
+                <div className="no-scrollbar flex max-h-40 flex-col divide-y divide-surface-border/40 overflow-y-auto">
                   {mutualFriends.map((mutual) => (
                     <div key={mutual.id} className="flex items-center gap-3 py-2">
                       <FramedAvatar frame={mutual.avatarFrame} src={mutual.avatarUrl} alt={mutual.displayName} size={32} />
@@ -758,6 +780,15 @@ function FriendsGroupIcon({ className = '' }: { className?: string }) {
       <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
       <path d="M16 5.5a3.5 3.5 0 0 1 0 7" />
       <path d="M15 13.2c2.9.4 5 2.1 5 6.8" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3" />
     </svg>
   );
 }

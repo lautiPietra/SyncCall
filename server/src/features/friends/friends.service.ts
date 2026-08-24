@@ -2,6 +2,7 @@ import { FriendRequest } from './friendRequest.model';
 import { Friendship } from './friendship.model';
 import { User } from '../users/users.model';
 import type { UserDocument } from '../users/users.types';
+import { Conversation } from '../conversations/conversations.model';
 import { ApiError } from '../../lib/ApiError';
 
 export const PUBLIC_USER_FIELDS =
@@ -12,9 +13,12 @@ export async function sendFriendRequest(fromId: string, toId: string) {
     throw new ApiError(400, 'No podés enviarte una solicitud a vos mismo');
   }
 
-  const toExists = await User.exists({ _id: toId });
-  if (!toExists) {
+  const target = await User.findById(toId).select('allowFriendRequests').lean();
+  if (!target) {
     throw new ApiError(404, 'Usuario no encontrado');
+  }
+  if (target.allowFriendRequests === false) {
+    throw new ApiError(403, 'Este usuario no acepta solicitudes de amistad por ahora');
   }
 
   const alreadyFriends = await Friendship.exists({
@@ -162,6 +166,13 @@ export async function removeFriend(userId: string, friendshipId: string): Promis
   const otherUserId =
     friendship.userA.toString() === userId ? friendship.userB.toString() : friendship.userA.toString();
   await friendship.deleteOne();
+
+  // Ya no se pueden mandar mensajes nuevos entre sí (ver messages.service): se oculta el DM de
+  // la lista de los dos en vez de dejarlo colgado ahí sin poder reabrirlo ni escribir. Si vuelven
+  // a ser amigos y se escriben de nuevo, se reabre solo (getOrCreateConversation ya lo des-oculta).
+  const [a, b] = [userId, otherUserId].sort();
+  await Conversation.updateOne({ participantA: a, participantB: b }, { $set: { hiddenForA: true, hiddenForB: true } });
+
   return { otherUserId };
 }
 

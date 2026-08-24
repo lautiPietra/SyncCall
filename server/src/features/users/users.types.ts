@@ -15,4 +15,7 @@ export interface UserDocument extends Document<Types.ObjectId> {
   status: UserStatus;
   isOnline: boolean;
   createdAt: Date;
+  deletedAt?: Date | null;
+  allowFriendRequests: boolean;
+  visibleInSearch: boolean;
 }

@@ -6,12 +6,18 @@ export default {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#5B6DFF',
-          hover: '#4C5CF5',
-          light: '#7F8DFF',
-          active: '#4250DA',
+          DEFAULT: 'rgb(var(--color-primary) / <alpha-value>)',
+          hover: 'rgb(var(--color-primary-hover) / <alpha-value>)',
+          light: 'rgb(var(--color-primary-light) / <alpha-value>)',
+          active: 'rgb(var(--color-primary-active) / <alpha-value>)',
         },
         secondary: '#7A5AF8',
+        // Color de marca fijo (no sigue el accent color elegido por el usuario): lo usa el
+        // botón del logo de SyncCall, que tiene que verse siempre igual para todos.
+        brand: {
+          DEFAULT: '#5B6DFF',
+          hover: '#4C5CF5',
+        },
         bg: {
           DEFAULT: '#0F172A',
           secondary: '#161B2E',

@@ -30,14 +30,20 @@ export const groupMemberParamsSchema = z.object({ id: objectIdSchema, userId: ob
 
 export const createChannelSchema = z.object({ name: channelNameSchema });
 
+export const updateChannelSchema = z.object({ name: channelNameSchema });
+
 export const channelParamsSchema = z.object({ id: objectIdSchema, channelId: objectIdSchema });
 
 export const inviteIdParamsSchema = z.object({ id: objectIdSchema });
 
 export const respondGroupInviteSchema = z.object({ status: z.enum(['accepted', 'declined']) });
 
+export const updateMemberRoleSchema = z.object({ role: z.enum(['admin', 'member']) });
+
 export type CreateGroupInput = z.infer<typeof createGroupSchema>;
 export type UpdateGroupInput = z.infer<typeof updateGroupSchema>;
 export type AddGroupMemberInput = z.infer<typeof addGroupMemberSchema>;
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
+export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
 export type RespondGroupInviteInput = z.infer<typeof respondGroupInviteSchema>;
+export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;

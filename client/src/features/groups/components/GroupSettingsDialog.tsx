@@ -17,9 +17,9 @@ import { FriendCheckboxList } from './FriendCheckboxList';
 
 type Tab = 'general' | 'members';
 
-export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onClose: () => void }) {
+export function GroupSettingsDialog({ groupId, isOwner, onClose }: { groupId: string; isOwner: boolean; onClose: () => void }) {
   const navigate = useNavigate();
-  const { group, members, loading, refresh } = useGroupDetail(groupId);
+  const { group, members, refresh } = useGroupDetail(groupId);
   const [tab, setTab] = useState<Tab>('general');
 
   const [name, setName] = useState('');
@@ -28,11 +28,14 @@ export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onC
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [generalError, setGeneralError] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState(false);
 
   const [selectedToInvite, setSelectedToInvite] = useState<Set<string>>(new Set());
   const [invitingMembers, setInvitingMembers] = useState(false);
   const [membersError, setMembersError] = useState<string | null>(null);
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+  const [confirmingRemove, setConfirmingRemove] = useState<{ userId: string; displayName: string } | null>(null);
+  const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -88,15 +91,22 @@ export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onC
     });
   }
 
+  function flashSaved(): void {
+    setSavedMessage(true);
+    setTimeout(() => setSavedMessage(false), 2500);
+  }
+
   async function handleSaveGeneral(): Promise<void> {
     if (!name.trim() || savingGeneral) {
       return;
     }
     setSavingGeneral(true);
     setGeneralError(null);
+    setSavedMessage(false);
     try {
       await groupsApi.updateGroup(groupId, { name: name.trim(), description: description.trim() || undefined });
       await refresh();
+      flashSaved();
     } catch (err) {
       setGeneralError(err instanceof ApiClientError ? err.message : 'No se pudo guardar');
     } finally {
@@ -112,9 +122,11 @@ export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onC
     }
     setUploadingPhoto(true);
     setGeneralError(null);
+    setSavedMessage(false);
     try {
       await groupsApi.uploadGroupPhoto(groupId, file);
       await refresh();
+      flashSaved();
     } catch (err) {
       setGeneralError(err instanceof ApiClientError ? err.message : 'No se pudo subir la foto');
     } finally {
@@ -141,6 +153,19 @@ export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onC
     }
   }
 
+  async function handleToggleRole(userId: string, currentRole: 'admin' | 'member'): Promise<void> {
+    setChangingRoleUserId(userId);
+    setMembersError(null);
+    try {
+      await groupsApi.setMemberRole(groupId, userId, currentRole === 'admin' ? 'member' : 'admin');
+      await refresh();
+    } catch (err) {
+      setMembersError(err instanceof ApiClientError ? err.message : 'No se pudo cambiar el rol');
+    } finally {
+      setChangingRoleUserId(null);
+    }
+  }
+
   async function handleRemoveMember(userId: string): Promise<void> {
     setRemovingUserId(userId);
     setMembersError(null);
@@ -151,6 +176,7 @@ export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onC
       setMembersError(err instanceof ApiClientError ? err.message : 'No se pudo sacar al miembro');
     } finally {
       setRemovingUserId(null);
+      setConfirmingRemove(null);
     }
   }
 
@@ -194,7 +220,7 @@ export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onC
           </TabButton>
         </div>
 
-        {loading || !group ? (
+        {!group ? (
           <div className="flex justify-center py-8">
             <Spinner />
           </div>
@@ -220,41 +246,58 @@ export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onC
             />
 
             {generalError && <p className="text-sm text-status-dnd">{generalError}</p>}
+            {savedMessage && <p className="text-sm text-status-online">Cambios guardados</p>}
 
             <Button onClick={() => void handleSaveGeneral()} loading={savingGeneral} disabled={!name.trim()} className="self-start">
               Guardar cambios
             </Button>
 
-            <div className="mt-2 border-t border-surface-border/60 pt-4">
-              <Button variant="danger" onClick={() => setConfirmingDelete(true)}>
-                Eliminar grupo
-              </Button>
-            </div>
+            {isOwner && (
+              <div className="mt-2 border-t border-surface-border/60 pt-4">
+                <Button variant="danger" onClick={() => setConfirmingDelete(true)}>
+                  Eliminar grupo
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-5">
             <div>
               <span className="text-xs font-semibold uppercase tracking-wide text-text-description">Miembros ({members.length})</span>
               <div className="mt-2 flex flex-col gap-0.5">
-                {members.map((m) => (
-                  <div key={m.user.id} className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-                    <FramedAvatar frame={m.user.avatarFrame} src={m.user.avatarUrl} alt={m.user.displayName} size={28} />
-                    <span className="min-w-0 flex-1 truncate text-sm text-white">{m.user.displayName}</span>
-                    {m.role === 'owner' ? (
-                      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">Dueño</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void handleRemoveMember(m.user.id)}
-                        disabled={removingUserId === m.user.id}
-                        aria-label={`Sacar a ${m.user.displayName} del grupo`}
-                        className="shrink-0 text-xs text-status-dnd transition-colors hover:underline disabled:opacity-60"
-                      >
-                        Sacar
-                      </button>
-                    )}
-                  </div>
-                ))}
+                {members.map((m) => {
+                  const role = m.role;
+                  const roleLabel = role === 'owner' ? 'Dueño' : role === 'admin' ? 'Administrador' : 'Miembro';
+                  const canRemoveThis = role !== 'owner' && (isOwner || role !== 'admin');
+                  return (
+                    <div key={m.user.id} className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
+                      <FramedAvatar frame={m.user.avatarFrame} src={m.user.avatarUrl} alt={m.user.displayName} size={28} />
+                      <span className="min-w-0 flex-1 truncate text-sm text-white">{m.user.displayName}</span>
+                      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">{roleLabel}</span>
+                      {isOwner && role !== 'owner' && (
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleRole(m.user.id, role)}
+                          disabled={changingRoleUserId === m.user.id}
+                          className="shrink-0 text-xs text-text-description transition-colors hover:text-white hover:underline disabled:opacity-60"
+                        >
+                          {role === 'admin' ? 'Quitar admin' : 'Hacer admin'}
+                        </button>
+                      )}
+                      {canRemoveThis && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingRemove({ userId: m.user.id, displayName: m.user.displayName })}
+                          disabled={removingUserId === m.user.id}
+                          aria-label={`Sacar a ${m.user.displayName} del grupo`}
+                          className="shrink-0 text-xs text-status-dnd transition-colors hover:underline disabled:opacity-60"
+                        >
+                          Sacar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -320,6 +363,16 @@ export function GroupSettingsDialog({ groupId, onClose }: { groupId: string; onC
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <Spinner />
         </div>
+      )}
+      {confirmingRemove && (
+        <ConfirmDialog
+          title="¿Sacar a este miembro?"
+          description={`${confirmingRemove.displayName} va a dejar de tener acceso al grupo y sus canales.`}
+          confirmLabel={removingUserId === confirmingRemove.userId ? 'Sacando...' : 'Sacar'}
+          variant="danger"
+          onConfirm={() => void handleRemoveMember(confirmingRemove.userId)}
+          onCancel={() => setConfirmingRemove(null)}
+        />
       )}
     </>
   );

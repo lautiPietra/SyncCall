@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import type { GroupInvitePreview } from '@synccall/shared';
 import { useGroups } from '../../../app/GroupsProvider';
 import { Avatar } from '../../../components/ui/Avatar';
+import { CountBadge } from '../../../components/ui/CountBadge';
 import { SyncCallMark } from '../../../components/ui/SyncCallMark';
 import { CreateGroupDialog } from './CreateGroupDialog';
 import { GroupInviteDialog } from './GroupInviteDialog';
@@ -14,13 +15,13 @@ export function GroupIconRail() {
   const [respondingInvite, setRespondingInvite] = useState<GroupInvitePreview | null>(null);
 
   return (
-    <aside className="flex w-[72px] shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-surface-border/60 bg-navbar py-3">
+    <aside className="no-scrollbar flex w-[72px] shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-surface-border/60 bg-navbar py-3">
       <NavLink
         to="/"
         end
         className={({ isActive }) =>
           `flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-all duration-150 hover:rounded-xl ${
-            isActive ? 'rounded-xl bg-primary' : 'bg-card hover:bg-primary'
+            isActive ? 'rounded-xl bg-brand' : 'bg-card hover:bg-brand'
           }`
         }
         aria-label="Mensajes directos"
@@ -52,14 +53,20 @@ export function GroupIconRail() {
           key={group.id}
           to={`/groups/${group.id}/channels/${group.defaultChannelId}`}
           className={({ isActive }) =>
-            `flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl transition-all duration-150 hover:rounded-xl ${
+            `relative flex h-12 w-12 shrink-0 items-center justify-center overflow-visible rounded-2xl transition-all duration-150 hover:rounded-xl ${
               isActive ? 'rounded-xl ring-2 ring-primary ring-offset-2 ring-offset-navbar' : ''
             }`
           }
           aria-label={group.name}
           title={group.name}
         >
-          <Avatar src={group.photoUrl ?? ''} alt={group.name} size={48} />
+          <div className="h-12 w-12 overflow-hidden rounded-[inherit]">
+            <Avatar src={group.photoUrl ?? ''} alt={group.name} size={48} />
+          </div>
+          <CountBadge
+            count={group.unreadCount}
+            className="absolute -bottom-1 -right-1 h-5 min-w-5 border-2 border-navbar px-1 text-[10px]"
+          />
         </NavLink>
       ))}
 

@@ -1,12 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom';
 import { getEffectiveStatus } from '@synccall/shared';
 import { useAuth } from './AuthProvider';
 import { useFriends } from './FriendsProvider';
 import { useConversations } from './ConversationsProvider';
+import { useGroups } from './GroupsProvider';
 import { useMessageRequests } from './MessageRequestsProvider';
 import { useNotificationPreferences } from './NotificationPreferencesProvider';
 import { useSocketConnected } from './SocketProvider';
+import { useToast } from './ToastProvider';
 import { SyncCallMark } from '../components/ui/SyncCallMark';
 import { FramedAvatar } from '../components/ui/AvatarFrame';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -17,6 +19,10 @@ import { STATUS_LABELS } from '../components/ui/StatusDot';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { GroupIconRail } from '../features/groups/components/GroupIconRail';
 import { GroupRail } from '../features/groups/components/GroupRail';
+import { SettingsDialog } from '../features/profile/components/SettingsDialog';
+import { IncomingCallModal } from '../features/calls/components/IncomingCallModal';
+import { CallBar } from '../features/calls/components/CallBar';
+import { CallScreen } from '../features/calls/components/CallScreen';
 
 export function AppLayout() {
   const { user, logout } = useAuth();
@@ -24,10 +30,24 @@ export function AppLayout() {
   const { conversations, loading: conversationsLoading, error: conversationsError, hide } = useConversations();
   const { requests: messageRequests } = useMessageRequests();
   const { mutedAll, setMutedAll, mutedFriendIds } = useNotificationPreferences();
+  const { kickedNotice, clearKickedNotice } = useGroups();
+  const { showToast } = useToast();
   const socketConnected = useSocketConnected();
   const navigate = useNavigate();
   const groupMatch = useMatch('/groups/:groupId/*');
+
+  useEffect(() => {
+    if (!kickedNotice) {
+      return;
+    }
+    showToast(`Te eliminaron del grupo "${kickedNotice.groupName}"`, 'error');
+    if (groupMatch?.params.groupId === kickedNotice.groupId) {
+      navigate('/');
+    }
+    clearKickedNotice();
+  }, [kickedNotice, groupMatch, navigate, showToast, clearKickedNotice]);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [dmSearchQuery, setDmSearchQuery] = useState('');
   const [dmPickerOpen, setDmPickerOpen] = useState(false);
@@ -108,7 +128,7 @@ export function AppLayout() {
           {dmPickerOpen && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setDmPickerOpen(false)} />
-              <div className="absolute left-3 right-3 top-full z-40 mt-1 max-h-72 overflow-y-auto rounded-lg border border-surface-border/60 bg-card py-1.5 shadow-2xl shadow-black/40">
+              <div className="no-scrollbar absolute left-3 right-3 top-full z-40 mt-1 max-h-72 overflow-y-auto rounded-lg border border-surface-border/60 bg-card py-1.5 shadow-2xl shadow-black/40">
                 {dmSearchResults.length === 0 ? (
                   <p className="px-3 py-2.5 text-xs text-text-disabled">
                     {dmSearchQuery.trim()
@@ -195,7 +215,7 @@ export function AppLayout() {
 
             {conversationsError && <p className="px-4 pb-2 text-xs text-status-dnd">{conversationsError}</p>}
 
-            <div className="mt-1 flex-1 overflow-y-auto px-2 pb-2">
+            <div className="no-scrollbar mt-1 flex-1 overflow-y-auto px-2 pb-2">
               {conversationsLoading ? (
                 <div className="flex justify-center py-6">
                   <Spinner size={18} />
@@ -261,6 +281,14 @@ export function AppLayout() {
         )}
 
         <div className="flex items-center gap-1.5 border-t border-surface-border/60 p-2">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Configuración"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-description transition-colors hover:bg-surface-hover hover:text-white"
+          >
+            <SettingsIcon />
+          </button>
           <Link
             to="/profile"
             onClick={() => setMobileNavOpen(false)}
@@ -300,10 +328,16 @@ export function AppLayout() {
           <span className="font-semibold text-white">SyncCall</span>
         </div>
 
-        <main className="min-w-0 flex-1 overflow-y-auto bg-sidebar">
+        <main className="no-scrollbar min-w-0 flex-1 overflow-y-auto bg-sidebar">
           <Outlet />
         </main>
       </div>
+
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+
+      <CallBar />
+      <IncomingCallModal />
+      <CallScreen />
 
       {confirmingLogout && (
         <ConfirmDialog
@@ -393,6 +427,15 @@ function XIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }

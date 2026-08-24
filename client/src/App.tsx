@@ -7,6 +7,8 @@ import { NotificationPreferencesProvider } from './app/NotificationPreferencesPr
 import { ConversationsProvider } from './app/ConversationsProvider';
 import { GroupsProvider } from './app/GroupsProvider';
 import { MessageRequestsProvider } from './app/MessageRequestsProvider';
+import { CallProvider } from './app/CallProvider';
+import { ToastProvider } from './app/ToastProvider';
 import { SplashScreen } from './app/SplashScreen';
 import { router } from './router/router';
 
@@ -18,20 +20,24 @@ export default function App() {
   }
 
   return (
-    <AuthProvider>
-      <SocketProvider>
-        <FriendsProvider>
-          <NotificationPreferencesProvider>
-            <ConversationsProvider>
-              <GroupsProvider>
-                <MessageRequestsProvider>
-                  <RouterProvider router={router} />
-                </MessageRequestsProvider>
-              </GroupsProvider>
-            </ConversationsProvider>
-          </NotificationPreferencesProvider>
-        </FriendsProvider>
-      </SocketProvider>
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <SocketProvider>
+          <FriendsProvider>
+            <NotificationPreferencesProvider>
+              <ConversationsProvider>
+                <GroupsProvider>
+                  <MessageRequestsProvider>
+                    <CallProvider>
+                      <RouterProvider router={router} />
+                    </CallProvider>
+                  </MessageRequestsProvider>
+                </GroupsProvider>
+              </ConversationsProvider>
+            </NotificationPreferencesProvider>
+          </FriendsProvider>
+        </SocketProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }

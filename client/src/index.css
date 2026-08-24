@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-primary: 91 109 255;
+  --color-primary-hover: 76 92 245;
+  --color-primary-light: 127 141 255;
+  --color-primary-active: 66 80 218;
+}
+
 body {
   @apply bg-[#0F172A] text-white;
+}
+
+/* Permite hacer scroll sin mostrar la barra visual (sigue andando con mouse/trackpad/teclado). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

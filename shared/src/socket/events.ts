@@ -4,6 +4,7 @@ import type { FriendRequest } from '../types/friend.types';
 import type { ConversationRequestStatus, MessageRequestSummary } from '../types/conversation.types';
 import type { Channel, GroupInvitePreview, GroupMemberDetail, GroupSummary } from '../types/group.types';
 import type { GroupMessage } from '../types/groupMessage.types';
+import type { CallParticipantInfo } from '../types/call.types';
 
 export const SOCKET_EVENTS = {
   DM_SEND: 'dm:send',
@@ -38,11 +39,25 @@ export const SOCKET_EVENTS = {
   GROUP_DELETED: 'group:deleted',
   GROUP_MEMBER_ADDED: 'group:member-added',
   GROUP_MEMBER_REMOVED: 'group:member-removed',
+  GROUP_MEMBER_ROLE_UPDATED: 'group:member-role-updated',
   GROUP_CHANNEL_CREATED: 'group:channel-created',
+  GROUP_CHANNEL_UPDATED: 'group:channel-updated',
   GROUP_CHANNEL_DELETED: 'group:channel-deleted',
   GROUP_INVITE_NEW: 'group-invite:new',
   GROUP_INVITE_RESOLVED: 'group-invite:resolved',
   GROUP_INVITE_CANCELLED: 'group-invite:cancelled',
+
+  CALL_INVITE: 'call:invite',
+  CALL_ACCEPT: 'call:accept',
+  CALL_DECLINE: 'call:decline',
+  CALL_CANCEL: 'call:cancel',
+  CALL_END: 'call:end',
+  CALL_BUSY: 'call:busy',
+  CALL_ERROR: 'call:error',
+  CALL_GROUP_JOIN: 'call:group-join',
+  CALL_GROUP_LEAVE: 'call:group-leave',
+  CALL_GROUP_STATE: 'call:group-state',
+  CALL_SIGNAL: 'call:signal',
 } as const;
 
 export interface DmSendPayload {
@@ -180,8 +195,15 @@ export interface GroupUpdatedPayload {
   group: GroupSummary;
 }
 
+/**
+ * Le llega a un usuario cuando un grupo deja de estar disponible para él: se reusa para las
+ * 3 causas posibles (se borró el grupo entero / se fue solo / lo expulsó un admin), y `reason`
+ * es lo que le permite al cliente distinguirlas (ej: solo mostrar el toast de "te expulsaron"
+ * cuando reason === 'kicked', ya que las otras dos ya las maneja quien hizo la acción).
+ */
 export interface GroupDeletedPayload {
   groupId: string;
+  reason: 'deleted' | 'left' | 'kicked';
 }
 
 export interface GroupMemberAddedPayload {
@@ -194,7 +216,17 @@ export interface GroupMemberRemovedPayload {
   userId: string;
 }
 
+export interface GroupMemberRoleUpdatedPayload {
+  groupId: string;
+  member: GroupMemberDetail;
+}
+
 export interface GroupChannelCreatedPayload {
+  groupId: string;
+  channel: Channel;
+}
+
+export interface GroupChannelUpdatedPayload {
   groupId: string;
   channel: Channel;
 }
@@ -218,4 +250,63 @@ export interface GroupInviteResolvedPayload {
 /** Le llega a quien fue invitado, si el dueño cancela la invitación antes de que la responda. */
 export interface GroupInviteCancelledPayload {
   groupId: string;
+}
+
+/** Emite el caller con solo el conversationId; el server arma callId + fromUserId y lo relaya a ambos participantes. */
+export interface CallInvitePayload {
+  conversationId: string;
+}
+
+export interface CallInviteRelayPayload {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+}
+
+export interface CallIdPayload {
+  callId: string;
+}
+
+export interface CallLifecycleRelayPayload {
+  callId: string;
+  byUserId: string;
+}
+
+/** Le llega solo al caller: el callee ya está en otra llamada. */
+export interface CallBusyPayload {
+  conversationId: string;
+}
+
+export interface CallErrorPayload {
+  message: string;
+  callId?: string;
+}
+
+export interface CallGroupJoinPayload {
+  channelId: string;
+}
+
+export interface CallGroupLeavePayload {
+  channelId: string;
+}
+
+/** Snapshot de quién está en la llamada de un canal de grupo: participants vacío = no hay llamada activa. */
+export interface CallGroupStatePayload {
+  channelId: string;
+  groupId: string;
+  callId: string | null;
+  participants: CallParticipantInfo[];
+}
+
+/** Señalización WebRTC (offer/answer/ICE) relayada punto a punto: el server nunca inspecciona `data`. */
+export interface CallSignalPayload {
+  callId: string;
+  toUserId: string;
+  data: unknown;
+}
+
+export interface CallSignalRelayPayload {
+  callId: string;
+  fromUserId: string;
+  data: unknown;
 }

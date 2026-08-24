@@ -30,7 +30,7 @@ export function Modal({ title, onClose, children, footer, maxWidth = 'max-w-md' 
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        <div className="no-scrollbar flex-1 overflow-y-auto px-5 py-4">{children}</div>
 
         {footer && <div className="flex justify-end gap-3 border-t border-surface-border/60 px-5 py-4">{footer}</div>}
       </div>
