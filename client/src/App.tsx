@@ -4,6 +4,7 @@ import { AuthProvider } from './app/AuthProvider';
 import { SocketProvider } from './app/SocketProvider';
 import { FriendsProvider } from './app/FriendsProvider';
 import { NotificationPreferencesProvider } from './app/NotificationPreferencesProvider';
+import { AudioDevicePreferencesProvider } from './app/AudioDevicePreferencesProvider';
 import { ConversationsProvider } from './app/ConversationsProvider';
 import { GroupsProvider } from './app/GroupsProvider';
 import { MessageRequestsProvider } from './app/MessageRequestsProvider';
@@ -25,15 +26,17 @@ export default function App() {
         <SocketProvider>
           <FriendsProvider>
             <NotificationPreferencesProvider>
-              <ConversationsProvider>
-                <GroupsProvider>
-                  <MessageRequestsProvider>
-                    <CallProvider>
-                      <RouterProvider router={router} />
-                    </CallProvider>
-                  </MessageRequestsProvider>
-                </GroupsProvider>
-              </ConversationsProvider>
+              <AudioDevicePreferencesProvider>
+                <ConversationsProvider>
+                  <GroupsProvider>
+                    <MessageRequestsProvider>
+                      <CallProvider>
+                        <RouterProvider router={router} />
+                      </CallProvider>
+                    </MessageRequestsProvider>
+                  </GroupsProvider>
+                </ConversationsProvider>
+              </AudioDevicePreferencesProvider>
             </NotificationPreferencesProvider>
           </FriendsProvider>
         </SocketProvider>

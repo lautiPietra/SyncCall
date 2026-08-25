@@ -78,6 +78,24 @@ export function playRingtone(): () => void {
 }
 
 /**
+ * Tono corto y ascendente al unirte a un canal de voz: confirmación inmediata (antes incluso
+ * de que el servidor confirme la unión) de que la acción se registró.
+ */
+export function playCallJoinSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+  if (ctx.state === 'suspended') {
+    void ctx.resume().catch(() => {});
+  }
+
+  const now = ctx.currentTime;
+  playTone(ctx, 440, now, 0.14, 0.15);
+  playTone(ctx, 660, now + 0.08, 0.2, 0.15);
+}
+
+/**
  * Tono corto y descendente (al revés del "ding" de mensaje) para marcar que una llamada
  * terminó, sea porque colgaste vos o porque se cortó del otro lado.
  */

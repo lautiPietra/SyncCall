@@ -1,10 +1,12 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../app/AuthProvider';
+import { useAudioDevicePreferences } from '../../../app/AudioDevicePreferencesProvider';
 import { useFriends } from '../../../app/FriendsProvider';
 import { useNotificationPreferences } from '../../../app/NotificationPreferencesProvider';
 import { ApiClientError } from '../../../lib/apiClient';
 import { applyAccentColor } from '../../../lib/accentColor';
+import { isAudioOutputSelectionSupported } from '../../../lib/audioOutput';
 import { isDesktopNotificationSupported } from '../../../lib/desktopNotifications';
 import { useEscapeToClose } from '../../../hooks/useEscapeToClose';
 import { FramedAvatar } from '../../../components/ui/AvatarFrame';
@@ -14,7 +16,7 @@ import { Toggle } from '../../../components/ui/Toggle';
 import { GitHubIcon, GoogleIcon } from '../../auth/components/OAuthButtons';
 import { updateProfile } from '../api/profile.api';
 
-type Category = 'account' | 'appearance' | 'notifications' | 'privacy';
+type Category = 'account' | 'appearance' | 'audio' | 'notifications' | 'privacy';
 
 const MEMBER_SINCE_FORMATTER = new Intl.DateTimeFormat('es-AR', {
   day: 'numeric',
@@ -25,6 +27,7 @@ const MEMBER_SINCE_FORMATTER = new Intl.DateTimeFormat('es-AR', {
 const CATEGORIES: { id: Category; label: string; icon: () => ReactNode }[] = [
   { id: 'account', label: 'Cuenta', icon: UserIcon },
   { id: 'appearance', label: 'Apariencia', icon: PaletteIcon },
+  { id: 'audio', label: 'Audio', icon: HeadphonesIcon },
   { id: 'notifications', label: 'Notificaciones', icon: BellIcon },
   { id: 'privacy', label: 'Privacidad', icon: LockIcon },
 ];
@@ -63,7 +66,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-surface-border/60 bg-card shadow-2xl shadow-black/40"
+        className="flex h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-surface-border/60 bg-card shadow-2xl shadow-black/40"
         role="dialog"
         aria-modal="true"
         aria-label="Configuración"
@@ -174,6 +177,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             )}
 
             {category === 'appearance' && <AppearanceSettings onGoToProfile={goToProfile} />}
+            {category === 'audio' && <AudioSettings />}
             {category === 'notifications' && <NotificationSettings />}
             {category === 'privacy' && <PrivacySettings />}
           </div>
@@ -261,6 +265,114 @@ function AppearanceSettings({ onGoToProfile }: { onGoToProfile: () => void }) {
           }
         />
       </SettingsCard>
+    </div>
+  );
+}
+
+function AudioSettings() {
+  const { inputDeviceId, outputDeviceId, setInputDeviceId, setOutputDeviceId } = useAudioDevicePreferences();
+  const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
+  const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const outputSupported = isAudioOutputSelectionSupported();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDevices(): Promise<void> {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
+        if (!cancelled) {
+          setError('Tu navegador no permite elegir dispositivos de audio.');
+          setLoading(false);
+        }
+        return;
+      }
+      try {
+        let devices = await navigator.mediaDevices.enumerateDevices();
+        const labelsHidden = devices.some((d) => d.kind === 'audioinput' && !d.label);
+        if (labelsHidden && navigator.mediaDevices.getUserMedia) {
+          // Los nombres de los dispositivos solo se ven una vez que se dio permiso de mic al
+          // menos una vez: se pide brevemente solo para desbloquearlos, no para usarlo.
+          try {
+            const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+            probe.getTracks().forEach((track) => track.stop());
+            devices = await navigator.mediaDevices.enumerateDevices();
+          } catch {
+            // Sin permiso los dispositivos igual se listan, solo que sin nombre.
+          }
+        }
+        if (cancelled) {
+          return;
+        }
+        setInputs(devices.filter((d) => d.kind === 'audioinput'));
+        setOutputs(devices.filter((d) => d.kind === 'audiooutput'));
+      } catch {
+        if (!cancelled) {
+          setError('No se pudieron listar los dispositivos de audio.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadDevices();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) {
+    return <p className="p-5 text-sm text-text-description">Buscando dispositivos de audio...</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <SettingsCard>
+        <div className="p-5">
+          <p className="text-sm font-medium text-white">Micrófono</p>
+          <p className="mt-0.5 text-xs text-text-description">El que se usa para hablar en las llamadas.</p>
+          <select
+            value={inputDeviceId ?? ''}
+            onChange={(e) => setInputDeviceId(e.target.value || null)}
+            className="mt-3 w-full rounded-lg border border-surface-border bg-bg px-3 py-2 text-sm text-white outline-none focus:border-primary"
+          >
+            <option value="">Predeterminado del sistema</option>
+            {inputs.map((d, i) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || `Micrófono ${i + 1}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard>
+        <div className="p-5">
+          <p className="text-sm font-medium text-white">Auriculares / parlantes</p>
+          <p className="mt-0.5 text-xs text-text-description">Por dónde se escucha a los demás en las llamadas.</p>
+          {outputSupported ? (
+            <select
+              value={outputDeviceId ?? ''}
+              onChange={(e) => setOutputDeviceId(e.target.value || null)}
+              className="mt-3 w-full rounded-lg border border-surface-border bg-bg px-3 py-2 text-sm text-white outline-none focus:border-primary"
+            >
+              <option value="">Predeterminado del sistema</option>
+              {outputs.map((d, i) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Salida ${i + 1}`}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="mt-3 text-xs text-text-disabled">Tu navegador no permite elegir la salida de audio (probá con Chrome o Edge).</p>
+          )}
+        </div>
+      </SettingsCard>
+
+      {error && <p className="text-xs text-status-dnd">{error}</p>}
     </div>
   );
 }
@@ -462,6 +574,16 @@ function PaletteIcon() {
       <circle cx="7.5" cy="10.5" r="1.2" fill="currentColor" stroke="none" />
       <circle cx="12" cy="7" r="1.2" fill="currentColor" stroke="none" />
       <circle cx="16.5" cy="10.5" r="1.2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function HeadphonesIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+      <path d="M3 14v-2a9 9 0 0 1 18 0v2" />
+      <path d="M21 15.5a2.5 2.5 0 0 1-2.5 2.5H17v-6h1.5A2.5 2.5 0 0 1 21 14.5Z" />
+      <path d="M3 15.5A2.5 2.5 0 0 0 5.5 18H7v-6H5.5A2.5 2.5 0 0 0 3 14.5Z" />
     </svg>
   );
 }

@@ -17,7 +17,7 @@ import { setIo, tryGetIo } from './io';
 import { clearMessageBucket } from './messageRateLimiter';
 import { registerMessageHandlers } from './handlers/message.handlers';
 import { registerGroupHandlers } from './handlers/group.handlers';
-import { registerCallHandlers, handleCallDisconnect } from './handlers/call.handlers';
+import { registerCallHandlers, handleCallDisconnect, syncActiveGroupCallsToSocket } from './handlers/call.handlers';
 
 function readCookie(header: string | undefined, name: string): string | undefined {
   if (!header) {
@@ -69,6 +69,7 @@ export function initSocket(httpServer: HttpServer): void {
 async function joinGroupRooms(socket: Socket, userId: string): Promise<void> {
   const groupIds = await getMyGroupIds(userId);
   groupIds.forEach((id) => void socket.join(`group:${id}`));
+  syncActiveGroupCallsToSocket(socket, groupIds);
 }
 
 async function handleConnect(io: Server, userId: string, socketId: string): Promise<void> {

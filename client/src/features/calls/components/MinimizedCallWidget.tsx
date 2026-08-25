@@ -19,7 +19,7 @@ function formatElapsed(startedAt: number | null): string {
  * el resto de la app (chatear, entrar a grupos, etc.) mientras se sigue en la llamada, con
  * controles rápidos y un botón para volver a la pantalla completa. */
 export function MinimizedCallWidget() {
-  const { call, callViewMode, toggleMute, endCall, leaveGroupCall, expandCall } = useCall();
+  const { call, callViewMode, toggleMute, toggleDeafen, endCall, leaveGroupCall, toggleScreenShare, expandCall } = useCall();
   const { friends } = useFriends();
   const { groups } = useGroups();
   const [, forceTick] = useState(0);
@@ -89,6 +89,28 @@ export function MinimizedCallWidget() {
       </button>
       <button
         type="button"
+        onClick={toggleDeafen}
+        aria-label={call.localDeafened ? 'Dejar de ensordecerse' : 'Ensordecerse'}
+        title={call.localDeafened ? 'Dejar de ensordecerse (volver a escuchar)' : 'Ensordecerse (dejar de escuchar a todos)'}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+          call.localDeafened ? 'bg-status-dnd text-white' : 'bg-surface-hover text-white hover:bg-surface-border'
+        }`}
+      >
+        {call.localDeafened ? <HeadphonesOffIcon /> : <HeadphonesIcon />}
+      </button>
+      <button
+        type="button"
+        onClick={toggleScreenShare}
+        aria-label={call.localSharingScreen ? 'Dejar de compartir pantalla' : 'Compartir pantalla'}
+        title={call.localSharingScreen ? 'Dejar de compartir pantalla' : 'Compartir pantalla'}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+          call.localSharingScreen ? 'bg-primary text-white' : 'bg-surface-hover text-white hover:bg-surface-border'
+        }`}
+      >
+        <ScreenShareIcon />
+      </button>
+      <button
+        type="button"
         onClick={call.kind === 'dm' ? endCall : leaveGroupCall}
         aria-label="Colgar"
         title="Colgar"
@@ -106,6 +128,36 @@ export function MinimizedCallWidget() {
         <ExpandIcon />
       </button>
     </div>
+  );
+}
+
+function ScreenShareIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4M8 12l4-4 4 4M12 8v5" />
+    </svg>
+  );
+}
+
+function HeadphonesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 14v-2a9 9 0 0 1 18 0v2" />
+      <path d="M21 15.5a2.5 2.5 0 0 1-2.5 2.5H17v-6h1.5A2.5 2.5 0 0 1 21 14.5Z" />
+      <path d="M3 15.5A2.5 2.5 0 0 0 5.5 18H7v-6H5.5A2.5 2.5 0 0 0 3 14.5Z" />
+    </svg>
+  );
+}
+
+function HeadphonesOffIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 14v-2a9 9 0 0 1 15.6-6.1M21 12.8V14" />
+      <path d="M21 15.5a2.5 2.5 0 0 1-2.5 2.5H17v-6h1.5c.34 0 .67.06.97.16" />
+      <path d="M3 15.5A2.5 2.5 0 0 0 5.5 18H7v-6H5.5A2.5 2.5 0 0 0 3 14.5Z" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
   );
 }
 

@@ -68,6 +68,19 @@ export function registerCallHandlers(io: Server, socket: Socket, userId: string)
   });
 }
 
+/** Al conectarse (o reconectarse) un socket, le manda el estado actual de cualquier llamada de
+ * grupo ya activa en sus grupos — directo a ese socket, no un broadcast — para que no dependa de
+ * que alguien más se una/salga después para enterarse de quién ya está en la llamada. */
+export function syncActiveGroupCallsToSocket(socket: Socket, groupIds: string[]): void {
+  groupIds.forEach((groupId) => {
+    callRegistry.getActiveGroupCallsForGroup(groupId).forEach((entry) => {
+      const participants: CallParticipantInfo[] = Array.from(entry.participants.keys()).map((uid) => ({ userId: uid }));
+      const payload: CallGroupStatePayload = { channelId: entry.channelId!, groupId, callId: entry.id, participants };
+      socket.emit(SOCKET_EVENTS.CALL_GROUP_STATE, payload);
+    });
+  });
+}
+
 /** Limpieza incondicional por socket: a diferencia de la limpieza de presencia (`handleDisconnect` en index.ts, que solo actúa cuando esa era la última pestaña del usuario), la llamada está atada a un socket puntual, no al usuario — si tenés 2 pestañas y cerrás la que está en la llamada, esa llamada se tiene que terminar igual aunque tu otra pestaña te mantenga online. */
 export function handleCallDisconnect(io: Server, userId: string, socketId: string): void {
   const affected = callRegistry.removeSocket(userId, socketId);

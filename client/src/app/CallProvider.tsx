@@ -12,12 +12,13 @@ import type {
 } from '@synccall/shared';
 import { SOCKET_EVENTS } from '@synccall/shared';
 import { useAuth } from './AuthProvider';
+import { useAudioDevicePreferences } from './AudioDevicePreferencesProvider';
 import { useNotificationPreferences } from './NotificationPreferencesProvider';
 import { useSocketConnected } from './SocketProvider';
 import { useToast } from './ToastProvider';
 import { socket } from '../lib/socketClient';
 import { ICE_SERVERS } from '../lib/webrtcConfig';
-import { playCallEndSound, playRingtone } from '../lib/notificationSound';
+import { playCallEndSound, playCallJoinSound, playRingtone } from '../lib/notificationSound';
 import { showDesktopNotification } from '../lib/desktopNotifications';
 
 type CallStatus = 'outgoing-ringing' | 'connecting' | 'active';
@@ -26,6 +27,7 @@ type CallViewMode = 'full' | 'minimized';
 
 interface CallParticipantState {
   stream: MediaStream | null;
+  screenStream: MediaStream | null;
 }
 
 interface ActiveCall {
@@ -40,6 +42,11 @@ interface ActiveCall {
   /** Info de perfil de los participantes conocida al iniciar/unirse a la llamada (grupo: los miembros del canal en ese momento; DM: se resuelve en la UI vía useFriends). Permite mostrar avatar/nombre en la pantalla de llamada sin depender de un registro global de usuarios. */
   knownUsers: Map<string, PublicUser>;
   localMuted: boolean;
+  /** Ensordecerse: no escuchás a nadie más. Ensordecerse también mutea tu mic (no tiene sentido
+   * hablar sin escuchar), pero desensordecerte no te desmutea solo — eso queda a tu criterio. */
+  localDeafened: boolean;
+  localSharingScreen: boolean;
+  localScreenStream: MediaStream | null;
   startedAt: number | null;
 }
 
@@ -73,7 +80,9 @@ interface CallContextValue {
   joinGroupCall: (channelId: string, knownUsers?: Map<string, PublicUser>) => void;
   leaveGroupCall: () => void;
   toggleMute: () => void;
+  toggleDeafen: () => void;
   retryMic: () => void;
+  toggleScreenShare: () => void;
   minimizeCall: () => void;
   expandCall: () => void;
 }
@@ -86,6 +95,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id;
   const { mutedAll, mutedFriendIds, desktopNotificationsEnabled } = useNotificationPreferences();
+  const { inputDeviceId } = useAudioDevicePreferences();
   const { showToast } = useToast();
   const socketConnected = useSocketConnected();
 
@@ -99,6 +109,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const incomingCallRef = useRef<IncomingCall | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
   const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const ringtoneStopRef = useRef<(() => void) | null>(null);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,6 +152,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     pendingIceRef.current.clear();
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+    screenStreamRef.current = null;
     stopRingtone();
     clearRingTimeout();
     pendingDmTargetRef.current = null;
@@ -169,19 +182,72 @@ export function CallProvider({ children }: { children: ReactNode }) {
       showToast(micErrorRef.current, 'error');
       return null;
     }
+    const baseAudioConstraints: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: inputDeviceId ? { ...baseAudioConstraints, deviceId: { exact: inputDeviceId } } : baseAudioConstraints,
       });
       localStreamRef.current = stream;
       return stream;
     } catch {
+      if (inputDeviceId) {
+        // El micrófono elegido en Configuración puede haberse desconectado: reintenta con el
+        // predeterminado del sistema antes de rendirse del todo.
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: baseAudioConstraints });
+          localStreamRef.current = stream;
+          return stream;
+        } catch {
+          // sigue al catch general de abajo
+        }
+      }
       micUnavailableRef.current = true;
       micErrorRef.current = 'No se pudo acceder al micrófono. Vas a escuchar sin poder hablar.';
       setMicError(micErrorRef.current);
       showToast(micErrorRef.current, 'error');
       return null;
     }
+  }
+
+  /** Cambio de micrófono desde Configuración mientras ya hay una llamada activa: se reemplaza el
+   * track en cada peer con `replaceTrack` (sin renegociar, a diferencia de compartir pantalla —
+   * es el mismo tipo de media, solo cambia la fuente) para que el cambio se sienta inmediato. Si
+   * no hay llamada en curso, no hay nada que hacer: la próxima llamada ya va a usar `inputDeviceId`. */
+  async function applyInputDevicePreference(deviceId: string | null): Promise<void> {
+    const current = callRef.current;
+    if (!current || !localStreamRef.current) {
+      return;
+    }
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      return;
+    }
+    const baseAudioConstraints: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    let newStream: MediaStream;
+    try {
+      newStream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { ...baseAudioConstraints, deviceId: { exact: deviceId } } : baseAudioConstraints,
+      });
+    } catch {
+      showToast('No se pudo cambiar de micrófono', 'error');
+      return;
+    }
+    const newTrack = newStream.getAudioTracks()[0];
+    if (!newTrack) {
+      newStream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    newTrack.enabled = !current.localMuted;
+
+    const oldStream = localStreamRef.current;
+    localStreamRef.current = newStream;
+    peerConnectionsRef.current.forEach((pc) => {
+      const sender = pc.getSenders().find((s) => s.track?.kind === 'audio');
+      if (sender) {
+        void sender.replaceTrack(newTrack).catch(() => {});
+      }
+    });
+    oldStream?.getTracks().forEach((track) => track.stop());
+    setCall((prev) => (prev ? { ...prev, localStream: newStream } : prev));
   }
 
   function flushPendingIce(peerId: string, pc: RTCPeerConnection): void {
@@ -193,13 +259,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
     pendingIceRef.current.delete(peerId);
   }
 
-  /** `localStream` puede ser null (sin mic disponible): igual se agrega un transceiver de audio en solo-recepción, para que la negociación incluya el audio del otro lado aunque yo no pueda hablar. */
+  /** `localStream` puede ser null (sin mic disponible): igual se agrega un transceiver de audio en solo-recepción, para que la negociación incluya el audio del otro lado aunque yo no pueda hablar. Si ya estoy compartiendo pantalla cuando se crea este peer (alguien se sumó a mitad de una llamada grupal), se incluye ese track de entrada para no depender de una renegociación aparte. */
   function createPeerConnection(peerId: string, callId: string, localStream: MediaStream | null): RTCPeerConnection {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     if (localStream) {
       localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
     } else {
       pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
+    if (screenStreamRef.current) {
+      const screenStream = screenStreamRef.current;
+      screenStream.getVideoTracks().forEach((track) => pc.addTrack(track, screenStream));
     }
 
     pc.onicecandidate = (event) => {
@@ -210,16 +280,59 @@ export function CallProvider({ children }: { children: ReactNode }) {
       socket.emit(SOCKET_EVENTS.CALL_SIGNAL, { callId, toUserId: peerId, data });
     };
 
+    // El video (siempre pantalla compartida, nunca cámara en esta app) se guarda aparte del audio
+    // de mic: cada uno llega en su propio MediaStream porque se agregan con addTrack(track, stream)
+    // usando streams distintos.
     pc.ontrack = (event) => {
       const [stream] = event.streams;
+      const isScreen = event.track.kind === 'video';
       setCall((prev) => {
         if (!prev) {
           return prev;
         }
         const next = new Map(prev.participants);
-        next.set(peerId, { stream: stream ?? null });
+        const existing = next.get(peerId) ?? { stream: null, screenStream: null };
+        next.set(peerId, isScreen ? { ...existing, screenStream: stream ?? null } : { ...existing, stream: stream ?? null });
         return { ...prev, participants: next, status: 'active' };
       });
+
+      if (isScreen) {
+        const clearScreenStream = (): void => {
+          setCall((prev) => {
+            if (!prev) {
+              return prev;
+            }
+            const existing = prev.participants.get(peerId);
+            if (!existing) {
+              return prev;
+            }
+            const next = new Map(prev.participants);
+            next.set(peerId, { ...existing, screenStream: null });
+            return { ...prev, participants: next };
+          });
+        };
+        // Cuando el otro lado deja de compartir (removeTrack + renegociación), el track remoto
+        // no pasa a "ended": el navegador lo marca "muted" (deja de llegar video, el track sigue
+        // vivo) — sin esto, el <video> se queda mostrando el último frame congelado para siempre.
+        // `onunmute` cubre el caso de un corte momentáneo de red (no confundir con "dejó de
+        // compartir"): si vuelve a fluir video, se restaura el mismo stream.
+        event.track.onended = clearScreenStream;
+        event.track.onmute = clearScreenStream;
+        event.track.onunmute = () => {
+          setCall((prev) => {
+            if (!prev) {
+              return prev;
+            }
+            const existing = prev.participants.get(peerId);
+            if (!existing) {
+              return prev;
+            }
+            const next = new Map(prev.participants);
+            next.set(peerId, { ...existing, screenStream: stream ?? null });
+            return { ...prev, participants: next };
+          });
+        };
+      }
     };
 
     peerConnectionsRef.current.set(peerId, pc);
@@ -323,6 +436,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
           localStream: null,
           knownUsers: new Map(),
           localMuted: false,
+          localDeafened: false,
+          localSharingScreen: false,
+          localScreenStream: null,
           startedAt: null,
         });
         clearRingTimeout();
@@ -414,6 +530,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
           localStream: null,
           knownUsers,
           localMuted: false,
+          localDeafened: false,
+          localSharingScreen: false,
+          localScreenStream: null,
           startedAt: Date.now(),
         });
       }
@@ -469,6 +588,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Cambiar el micrófono en Configuración mientras hay una llamada en curso lo aplica al toque
+  // (ver applyInputDevicePreference); si no hay llamada activa esto es un no-op y el nuevo
+  // dispositivo se usa recién en la próxima.
+  useEffect(() => {
+    void applyInputDevicePreference(inputDeviceId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputDeviceId]);
+
   function startDmCall(conversationId: string, toUserId: string): void {
     if (callRef.current || incomingCallRef.current) {
       showToast('Ya estás en una llamada', 'error');
@@ -495,6 +622,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
       localStream: null,
       knownUsers: new Map(),
       localMuted: false,
+      localDeafened: false,
+      localSharingScreen: false,
+      localScreenStream: null,
       startedAt: Date.now(),
     });
     socket.emit(SOCKET_EVENTS.CALL_ACCEPT, { callId: current.callId } satisfies CallIdPayload);
@@ -525,6 +655,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (current.kind === 'dm') {
       socket.emit(SOCKET_EVENTS.CALL_END, { callId: current.callId } satisfies CallIdPayload);
     } else {
+      // Optimista, misma lógica que joinGroupCall: sacarme de la lista ya mismo en vez de esperar
+      // el broadcast del servidor.
+      setGroupCallState((prev) => {
+        const existing = prev.get(current.contextId);
+        if (!existing) {
+          return prev;
+        }
+        const next = new Map(prev);
+        const participantIds = existing.participantIds.filter((id) => id !== userId);
+        if (participantIds.length === 0) {
+          next.delete(current.contextId);
+        } else {
+          next.set(current.contextId, { ...existing, participantIds });
+        }
+        return next;
+      });
       socket.emit(SOCKET_EVENTS.CALL_GROUP_LEAVE, { channelId: current.contextId });
     }
     cleanupCall();
@@ -535,8 +681,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
       showToast('Ya estás en una llamada', 'error');
       return;
     }
+    if (!userId) {
+      return;
+    }
+    playCallJoinSound();
     joiningGroupChannelRef.current = channelId;
     pendingGroupKnownUsersRef.current = knownUsers ?? null;
+    // Optimista: mostrar el propio avatar en la lista de participantes del canal ya mismo, sin
+    // esperar la ida y vuelta al servidor — CALL_GROUP_STATE la va a confirmar/corregir enseguida.
+    setGroupCallState((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(channelId);
+      const participantIds = existing ? Array.from(new Set([...existing.participantIds, userId])) : [userId];
+      next.set(channelId, { callId: existing?.callId ?? '', participantIds });
+      return next;
+    });
     socket.emit(SOCKET_EVENTS.CALL_GROUP_JOIN, { channelId } satisfies CallGroupJoinPayload);
   }
 
@@ -549,7 +708,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
       localStreamRef.current?.getAudioTracks().forEach((track) => {
         track.enabled = !nextMuted;
       });
-      return { ...prev, localMuted: nextMuted };
+      // Desmutearte mientras estás ensordecido no tendría sentido (hablarías sin poder
+      // escuchar): se levanta el ensordecimiento junto con el mic.
+      return { ...prev, localMuted: nextMuted, localDeafened: nextMuted ? prev.localDeafened : false };
+    });
+  }
+
+  /** Ensordecerse también mutea el mic (igual que Discord): no tiene sentido seguir hablando sin
+   * escuchar a nadie. Desensordecerte, al revés, NO te desmutea solo — eso es una decisión aparte. */
+  function toggleDeafen(): void {
+    setCall((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const nextDeafened = !prev.localDeafened;
+      if (nextDeafened) {
+        localStreamRef.current?.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+        });
+      }
+      return { ...prev, localDeafened: nextDeafened, localMuted: nextDeafened ? true : prev.localMuted };
     });
   }
 
@@ -580,6 +758,79 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /** Agrega el track de pantalla a cada peer ya conectado y renegocia (mismo patrón que retryMic: un offer nuevo por peer, vía el mismo transporte CALL_SIGNAL). */
+  async function startScreenShare(): Promise<void> {
+    const current = callRef.current;
+    if (!current || screenStreamRef.current) {
+      return;
+    }
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      showToast('Tu navegador no permite compartir pantalla.', 'error');
+      return;
+    }
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    } catch {
+      // El usuario cerró el selector de pantalla/ventana sin elegir nada: no es un error real.
+      return;
+    }
+
+    screenStreamRef.current = stream;
+    const track = stream.getVideoTracks()[0];
+    // Se dispara cuando el usuario corta desde la barra nativa del navegador ("Dejar de compartir"),
+    // no cuando lo cortamos nosotros llamando a stopScreenShare() (track.stop() no emite este evento).
+    track.onended = () => {
+      if (screenStreamRef.current === stream) {
+        void stopScreenShare();
+      }
+    };
+
+    setCall((prev) => (prev ? { ...prev, localSharingScreen: true, localScreenStream: stream } : prev));
+
+    for (const [peerId, pc] of peerConnectionsRef.current) {
+      pc.addTrack(track, stream);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const data: SignalData = { type: 'offer', sdp: offer };
+      socket.emit(SOCKET_EVENTS.CALL_SIGNAL, { callId: current.callId, toUserId: peerId, data });
+    }
+  }
+
+  async function stopScreenShare(): Promise<void> {
+    const current = callRef.current;
+    const stream = screenStreamRef.current;
+    if (!current || !stream) {
+      return;
+    }
+    const track = stream.getVideoTracks()[0];
+    screenStreamRef.current = null;
+    stream.getTracks().forEach((t) => t.stop());
+
+    setCall((prev) => (prev ? { ...prev, localSharingScreen: false, localScreenStream: null } : prev));
+
+    for (const [peerId, pc] of peerConnectionsRef.current) {
+      const sender = pc.getSenders().find((s) => s.track === track);
+      if (!sender) {
+        continue;
+      }
+      pc.removeTrack(sender);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const data: SignalData = { type: 'offer', sdp: offer };
+      socket.emit(SOCKET_EVENTS.CALL_SIGNAL, { callId: current.callId, toUserId: peerId, data });
+    }
+  }
+
+  function toggleScreenShare(): void {
+    if (callRef.current?.localSharingScreen) {
+      void stopScreenShare();
+    } else {
+      void startScreenShare();
+    }
+  }
+
   function minimizeCall(): void {
     if (callRef.current) {
       setCallViewMode('minimized');
@@ -604,7 +855,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     joinGroupCall,
     leaveGroupCall: hangUp,
     toggleMute,
+    toggleDeafen,
     retryMic,
+    toggleScreenShare,
     minimizeCall,
     expandCall,
   };

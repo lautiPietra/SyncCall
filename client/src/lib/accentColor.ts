@@ -92,3 +92,20 @@ export function resetAccentColor(): void {
   const root = document.documentElement.style;
   CSS_VARS.forEach((name) => root.removeProperty(name));
 }
+
+function toHex([r, g, b]: Rgb): string {
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * Variante clara de un color puntual (misma fórmula HSL que `applyAccentColor`, pero devuelve un
+ * hex en vez de pisar los custom properties globales) — para pintar con el `accentColor` de OTRO
+ * usuario (ej: el banner del perfil de un amigo) sin tocar el tema propio de quien mira.
+ */
+export function lightenAccentColor(hex: string, amount = 12): string {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) {
+    return hex;
+  }
+  const [h, s, l] = rgbToHsl(hexToRgb(hex));
+  return toHex(hslToRgb([h, s, clampLightness(l + amount)]));
+}

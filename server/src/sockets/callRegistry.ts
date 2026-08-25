@@ -47,6 +47,13 @@ export function getCall(callId: string): CallEntry | undefined {
   return callsById.get(callId);
 }
 
+/** Llamadas de grupo activas en un grupo dado, para sincronizar a un socket recién conectado el
+ * estado actual (sin esto, un cliente que abre la app con una llamada ya en curso en su grupo
+ * no se entera hasta el próximo join/leave ajeno, que recién ahí dispara un broadcast). */
+export function getActiveGroupCallsForGroup(groupId: string): CallEntry[] {
+  return Array.from(callsById.values()).filter((entry) => entry.kind === 'group' && entry.groupId === groupId);
+}
+
 export function isParticipant(callId: string, userId: string): boolean {
   return callsById.get(callId)?.participants.has(userId) ?? false;
 }
