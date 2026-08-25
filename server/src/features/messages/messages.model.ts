@@ -13,7 +13,7 @@ const reactionSchema = new Schema<MessageReactionSubdocument>(
 const messageSchema = new Schema<MessageDocument>({
   conversation: { type: Schema.Types.ObjectId, ref: 'Conversation', required: true },
   sender: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { type: String, enum: ['text', 'image', 'audio'], default: 'text' },
+  type: { type: String, enum: ['text', 'image', 'audio', 'call'], default: 'text' },
   // Sin `required`: una imagen sin texto cifra un string vacío ('' -> ciphertext de largo 0),
   // y el validador default de Mongoose para String trata '' como "ausente" en un required.
   ciphertext: { type: String, default: '' },

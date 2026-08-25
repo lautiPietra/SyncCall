@@ -1,5 +1,5 @@
 import type { Document, Types } from 'mongoose';
-import type { GroupRole } from '@synccall/shared';
+import type { ChannelType, GroupRole } from '@synccall/shared';
 
 export interface GroupMemberSubdocument {
   user: Types.ObjectId;
@@ -19,5 +19,6 @@ export interface GroupDocument extends Document<Types.ObjectId> {
 export interface ChannelDocument extends Document<Types.ObjectId> {
   group: Types.ObjectId;
   name: string;
+  type: ChannelType;
   createdAt: Date;
 }

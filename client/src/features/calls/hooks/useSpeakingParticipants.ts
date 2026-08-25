@@ -12,7 +12,11 @@ interface AnalyserEntry {
 }
 
 const SPEAKING_THRESHOLD = 12;
-const POLL_INTERVAL_MS = 150;
+const POLL_INTERVAL_MS = 60;
+/** Cuánto se mantiene "hablando" después de la última muestra fuerte, para que un silencio de
+ * una fracción de segundo entre palabras no apague y prenda el borde (parpadeo). El encendido,
+ * en cambio, es inmediato apenas se cruza el umbral. */
+const RELEASE_HOLD_MS = 220;
 
 function getAudioContextCtor(): typeof AudioContext | undefined {
   if (typeof window === 'undefined') {
@@ -54,7 +58,7 @@ export function useSpeakingParticipants(entries: StreamEntry[]): Set<string> {
         const source = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 512;
-        analyser.smoothingTimeConstant = 0.6;
+        analyser.smoothingTimeConstant = 0.25;
         source.connect(analyser);
         analysersRef.current.set(id, {
           source,
@@ -69,7 +73,9 @@ export function useSpeakingParticipants(entries: StreamEntry[]): Set<string> {
   }, [streamsKey]);
 
   useEffect(() => {
+    const lastAboveRef = new Map<string, number>();
     const interval = setInterval(() => {
+      const now = Date.now();
       const next = new Set<string>();
       analysersRef.current.forEach(({ analyser, data }, id) => {
         analyser.getByteFrequencyData(data);
@@ -78,6 +84,10 @@ export function useSpeakingParticipants(entries: StreamEntry[]): Set<string> {
           sum += data[i];
         }
         if (sum / data.length > SPEAKING_THRESHOLD) {
+          lastAboveRef.set(id, now);
+        }
+        const lastAbove = lastAboveRef.get(id);
+        if (lastAbove !== undefined && now - lastAbove < RELEASE_HOLD_MS) {
           next.add(id);
         }
       });

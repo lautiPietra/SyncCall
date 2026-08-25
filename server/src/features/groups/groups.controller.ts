@@ -3,6 +3,7 @@ import type { UploadApiResponse } from 'cloudinary';
 import { SOCKET_EVENTS } from '@synccall/shared';
 import type {
   AddGroupMemberInput,
+  CallGroupStatePayload,
   CreateChannelInput,
   CreateGroupInput,
   GroupChannelCreatedPayload,
@@ -35,6 +36,7 @@ import { toPublicUser } from '../conversations/conversations.service';
 import { cloudinary } from '../../config/cloudinary';
 import { ApiError } from '../../lib/ApiError';
 import { joinUserToGroupRoom, leaveUserFromGroupRoom, tryGetIo } from '../../sockets/io';
+import * as callRegistry from '../../sockets/callRegistry';
 
 export async function listGroups(req: Request, res: Response): Promise<void> {
   const groups = await groupsService.listMyGroups(req.user!._id.toString());
@@ -58,6 +60,7 @@ export async function getGroup(req: Request, res: Response): Promise<void> {
         id: c._id.toString(),
         group: c.group.toString(),
         name: c.name,
+        type: c.type,
         createdAt: c.createdAt.toISOString(),
         unreadCount: channelUnreadCounts.get(c._id.toString()) ?? 0,
       })),
@@ -306,8 +309,8 @@ export async function leaveGroup(req: Request, res: Response): Promise<void> {
 export async function createChannel(req: Request, res: Response): Promise<void> {
   const ownerId = req.user!._id.toString();
   const groupId = req.params.id;
-  const { name } = req.body as CreateChannelInput;
-  const channel = await groupsService.createChannel(groupId, ownerId, name);
+  const { name, type } = req.body as CreateChannelInput;
+  const channel = await groupsService.createChannel(groupId, ownerId, name, type);
 
   const payload: GroupChannelCreatedPayload = {
     groupId,
@@ -315,6 +318,7 @@ export async function createChannel(req: Request, res: Response): Promise<void> 
       id: channel._id.toString(),
       group: channel.group.toString(),
       name: channel.name,
+      type: channel.type,
       createdAt: channel.createdAt.toISOString(),
       unreadCount: 0,
     },
@@ -337,6 +341,7 @@ export async function updateChannel(req: Request, res: Response): Promise<void> 
       id: channel._id.toString(),
       group: channel.group.toString(),
       name: channel.name,
+      type: channel.type,
       createdAt: channel.createdAt.toISOString(),
       unreadCount: 0,
     },
@@ -352,8 +357,18 @@ export async function deleteChannel(req: Request, res: Response): Promise<void> 
   const channelId = req.params.channelId;
   await groupsService.deleteChannel(groupId, channelId, ownerId);
 
+  const io = tryGetIo();
+
+  // Si el canal (de voz) que se borró tenía gente conectada, esa llamada quedaría huérfana en
+  // el registro; se corta de una y se avisa para que a todos se les cierre la pantalla de llamada.
+  const endedCall = callRegistry.forceEndGroupCall(channelId);
+  if (endedCall) {
+    const callStatePayload: CallGroupStatePayload = { channelId, groupId, callId: null, participants: [] };
+    io?.to(`group:${groupId}`).emit(SOCKET_EVENTS.CALL_GROUP_STATE, callStatePayload);
+  }
+
   const payload: GroupChannelDeletedPayload = { groupId, channelId };
-  tryGetIo()?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_CHANNEL_DELETED, payload);
+  io?.to(`group:${groupId}`).emit(SOCKET_EVENTS.GROUP_CHANNEL_DELETED, payload);
 
   res.status(204).send();
 }

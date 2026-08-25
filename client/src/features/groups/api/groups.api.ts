@@ -1,5 +1,6 @@
 import type {
   Channel,
+  ChannelType,
   GroupDetailResponse,
   GroupMemberDetail,
   GroupMessage,
@@ -69,8 +70,8 @@ export function leaveGroup(groupId: string): Promise<void> {
   return apiFetch(`/groups/${groupId}/leave`, { method: 'POST' });
 }
 
-export function createChannel(groupId: string, name: string): Promise<{ channel: Channel }> {
-  return apiFetch(`/groups/${groupId}/channels`, { method: 'POST', body: { name } });
+export function createChannel(groupId: string, name: string, type: ChannelType = 'text'): Promise<{ channel: Channel }> {
+  return apiFetch(`/groups/${groupId}/channels`, { method: 'POST', body: { name, type } });
 }
 
 export function updateChannel(groupId: string, channelId: string, name: string): Promise<{ channel: Channel }> {

@@ -28,7 +28,7 @@ function formatElapsed(startedAt: number | null): string {
 
 export function CallScreen() {
   const { user } = useAuth();
-  const { call, micError, toggleMute, endCall, leaveGroupCall, retryMic } = useCall();
+  const { call, micError, callViewMode, toggleMute, endCall, leaveGroupCall, retryMic, minimizeCall } = useCall();
   const { friends } = useFriends();
   const { groups } = useGroups();
   const [, forceTick] = useState(0);
@@ -42,7 +42,7 @@ export function CallScreen() {
     return () => clearInterval(interval);
   }, [status]);
 
-  const isVisible = Boolean(call) && (status === 'connecting' || status === 'active');
+  const isVisible = Boolean(call) && callViewMode === 'full' && (status === 'connecting' || status === 'active');
 
   const remoteEntries = call
     ? call.remoteUserIds.map((id) => {
@@ -70,25 +70,51 @@ export function CallScreen() {
     title = group ? group.name : 'Llamada de grupo';
   }
   const subtitle = call.status === 'connecting' ? 'Conectando...' : formatElapsed(call.startedAt);
+  const totalTiles = 1 + remoteEntries.length;
+  const isPair = totalTiles === 2;
+  const participantsLabel = call.kind === 'group' ? `${totalTiles} ${totalTiles === 1 ? 'persona' : 'personas'} en la llamada` : null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-bg">
-      <div className="flex shrink-0 flex-col items-center gap-1 px-6 pt-8 text-center">
+    <div className="fixed inset-0 z-[70] flex flex-col bg-gradient-to-b from-bg to-bg-secondary">
+      <div className="relative flex shrink-0 flex-col items-center gap-1 px-6 pt-8 text-center">
+        <button
+          type="button"
+          onClick={minimizeCall}
+          aria-label="Minimizar llamada"
+          title="Minimizar y seguir navegando"
+          className="absolute right-4 top-6 flex h-9 w-9 items-center justify-center rounded-full text-text-description transition-colors hover:bg-surface-hover hover:text-white"
+        >
+          <MinimizeIcon />
+        </button>
         <p className="text-lg font-semibold text-white">{title}</p>
         <p className="text-sm text-text-description">{micError ?? subtitle}</p>
+        {participantsLabel && !micError && <p className="text-xs text-text-disabled">{participantsLabel}</p>}
       </div>
 
       <div className="flex flex-1 items-center justify-center overflow-y-auto p-6 md:p-10">
-        <div className="flex w-full max-w-5xl flex-wrap items-center justify-center gap-5">
+        <div
+          className={`flex w-full items-center justify-center ${
+            isPair ? 'max-w-4xl gap-6' : 'max-w-5xl flex-wrap gap-5'
+          }`}
+        >
           <ParticipantCard
             profile={user ? { ...user, isOnline: true } : undefined}
             fallbackLabel="Vos"
             isSelf
+            large={isPair}
             muted={call.localMuted || !call.localStream}
             speaking={speakingIds.has(user?.id ?? 'me')}
+            connected={call.status === 'active'}
           />
           {remoteEntries.map(({ id, profile }) => (
-            <ParticipantCard key={id} profile={profile} fallbackLabel="Usuario" speaking={speakingIds.has(id)} />
+            <ParticipantCard
+              key={id}
+              profile={profile}
+              fallbackLabel="Usuario"
+              large={isPair}
+              speaking={speakingIds.has(id)}
+              connected={call.status === 'active'}
+            />
           ))}
         </div>
       </div>
@@ -153,29 +179,61 @@ function ParticipantCard({
   speaking,
   muted = false,
   isSelf = false,
+  large = false,
+  connected = false,
 }: {
   profile?: PublicUser;
   fallbackLabel: string;
   speaking: boolean;
   muted?: boolean;
   isSelf?: boolean;
+  large?: boolean;
+  connected?: boolean;
 }) {
   const accent = profile?.accentColor ?? '#5B6DFF';
+  const avatarSize = large ? 136 : 92;
 
   return (
     <div
-      className="relative flex aspect-[4/3] w-full max-w-[280px] flex-1 basis-[220px] flex-col justify-end overflow-hidden rounded-2xl transition-transform duration-150"
+      className={`relative flex flex-col justify-end overflow-hidden rounded-2xl transition-transform duration-150 ${
+        large
+          ? 'aspect-[5/4] w-full max-w-[420px] flex-1 basis-[320px]'
+          : 'aspect-[4/3] w-full max-w-[280px] flex-1 basis-[220px]'
+      }`}
       style={{
         backgroundColor: hexToRgba(accent, 0.22),
-        boxShadow: speaking ? `0 0 0 3px ${accent}, 0 0 26px 4px ${hexToRgba(accent, 0.55)}` : '0 0 0 1px rgba(255,255,255,0.08)',
+        boxShadow: speaking ? `0 0 0 3px ${accent}, 0 0 32px 6px ${hexToRgba(accent, 0.55)}` : '0 0 0 1px rgba(255,255,255,0.08)',
         transform: speaking ? 'scale(1.02)' : 'scale(1)',
       }}
     >
+      {profile?.avatarUrl && (
+        <img
+          src={profile.avatarUrl}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 h-full w-full scale-125 object-cover opacity-25 blur-2xl"
+        />
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10" />
+
+      {connected && (
+        <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/45 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-status-online opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-status-online" />
+          </span>
+          En vivo
+        </span>
+      )}
+
       <div className="absolute inset-0 flex items-center justify-center">
         {profile ? (
-          <FramedAvatar frame={profile.avatarFrame} src={profile.avatarUrl} alt={profile.displayName} size={92} />
+          <FramedAvatar frame={profile.avatarFrame} src={profile.avatarUrl} alt={profile.displayName} size={avatarSize} />
         ) : (
-          <div className="flex h-[92px] w-[92px] items-center justify-center rounded-full bg-surface-hover text-3xl text-text-description">
+          <div
+            className="flex items-center justify-center rounded-full bg-surface-hover text-3xl text-text-description"
+            style={{ width: avatarSize, height: avatarSize }}
+          >
             ?
           </div>
         )}
@@ -185,13 +243,29 @@ function ParticipantCard({
           {profile?.displayName ?? fallbackLabel}
           {isSelf ? ' (vos)' : ''}
         </span>
-        {muted && (
+        {muted ? (
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-dnd text-white">
             <MicOffIcon size={13} />
           </span>
+        ) : (
+          speaking && (
+            <span className="flex h-6 shrink-0 items-end gap-[2px] rounded-md bg-black/45 px-1.5 py-1">
+              <span className="h-2 w-[3px] animate-eq-bounce rounded-full bg-status-online [animation-delay:0ms]" />
+              <span className="h-2 w-[3px] animate-eq-bounce rounded-full bg-status-online [animation-delay:120ms]" />
+              <span className="h-2 w-[3px] animate-eq-bounce rounded-full bg-status-online [animation-delay:240ms]" />
+            </span>
+          )
         )}
       </div>
     </div>
+  );
+}
+
+function MinimizeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+    </svg>
   );
 }
 

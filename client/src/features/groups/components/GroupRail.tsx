@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import type { Channel } from '@synccall/shared';
+import type { Channel, ChannelType } from '@synccall/shared';
 import { useAuth } from '../../../app/AuthProvider';
+import { useCall } from '../../../app/CallProvider';
 import { useGroupDetail } from '../hooks/useGroupDetail';
 import { useEscapeToClose } from '../../../hooks/useEscapeToClose';
 import { ApiClientError } from '../../../lib/apiClient';
@@ -13,20 +14,26 @@ import * as groupsApi from '../api/groups.api';
 import { GroupSettingsDialog } from './GroupSettingsDialog';
 import { CreateChannelDialog } from './CreateChannelDialog';
 import { EditChannelDialog } from './EditChannelDialog';
+import { CallParticipantsStack } from '../../calls/components/CallParticipantsStack';
 
 export function GroupRail({ groupId }: { groupId: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { call, groupCallState, joinGroupCall, expandCall } = useCall();
   const { group, channels, members, loading } = useGroupDetail(groupId);
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [creatingChannel, setCreatingChannel] = useState(false);
+  const [creatingChannelType, setCreatingChannelType] = useState<ChannelType | null>(null);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [deletingChannel, setDeletingChannel] = useState<Channel | null>(null);
   const [deletingChannelBusy, setDeletingChannelBusy] = useState(false);
   const [deleteChannelError, setDeleteChannelError] = useState<string | null>(null);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
+
+  const textChannels = useMemo(() => channels.filter((c) => c.type === 'text'), [channels]);
+  const voiceChannels = useMemo(() => channels.filter((c) => c.type === 'voice'), [channels]);
+  const membersById = useMemo(() => new Map(members.map((m) => [m.user.id, m.user])), [members]);
 
   useEscapeToClose(() => {
     if (menuOpen) {
@@ -46,6 +53,15 @@ export function GroupRail({ groupId }: { groupId: string }) {
     } catch (err) {
       setLeaveError(err instanceof ApiClientError ? err.message : 'No se pudo salir del grupo');
     }
+  }
+
+  function handleVoiceChannelClick(channel: Channel): void {
+    const isThisChannelActive = call?.kind === 'group' && call.contextId === channel.id;
+    if (isThisChannelActive) {
+      expandCall();
+      return;
+    }
+    joinGroupCall(channel.id, membersById);
   }
 
   async function handleDeleteChannel(): Promise<void> {
@@ -125,7 +141,7 @@ export function GroupRail({ groupId }: { groupId: string }) {
           {canManage && (
             <button
               type="button"
-              onClick={() => setCreatingChannel(true)}
+              onClick={() => setCreatingChannelType('text')}
               aria-label="Crear canal de texto"
               className="flex h-5 w-5 items-center justify-center rounded text-text-description transition-colors hover:bg-surface-hover hover:text-white"
             >
@@ -134,7 +150,7 @@ export function GroupRail({ groupId }: { groupId: string }) {
           )}
         </div>
         <div className="mt-1 flex flex-col gap-0.5">
-          {channels.map((channel) => (
+          {textChannels.map((channel) => (
             <div key={channel.id} className="group flex items-center gap-0.5">
               <NavLink
                 to={`/groups/${groupId}/channels/${channel.id}`}
@@ -172,13 +188,73 @@ export function GroupRail({ groupId }: { groupId: string }) {
           ))}
         </div>
 
-        <div className="mt-4 px-2.5 text-xs font-semibold uppercase tracking-wide text-text-disabled" title="Próximamente">
-          Canales de voz
+        <div className="mt-4 flex items-center justify-between px-2.5">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-description">Canales de voz</span>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setCreatingChannelType('voice')}
+              aria-label="Crear canal de voz"
+              className="flex h-5 w-5 items-center justify-center rounded text-text-description transition-colors hover:bg-surface-hover hover:text-white"
+            >
+              <PlusIcon />
+            </button>
+          )}
+        </div>
+        <div className="mt-1 flex flex-col gap-0.5">
+          {voiceChannels.map((channel) => {
+            const callState = groupCallState.get(channel.id);
+            const participantIds = callState?.participantIds ?? [];
+            const isActiveHere = call?.kind === 'group' && call.contextId === channel.id;
+            return (
+              <div key={channel.id} className="group flex flex-col gap-1">
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleVoiceChannelClick(channel)}
+                    className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
+                      isActiveHere ? 'bg-status-online/10 text-status-online' : 'text-text-description hover:bg-surface-hover/60 hover:text-white'
+                    }`}
+                  >
+                    <VoiceIcon />
+                    <span className="min-w-0 flex-1 truncate">{channel.name}</span>
+                  </button>
+                  {canManage && (
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => setEditingChannel(channel)}
+                        aria-label={`Editar canal ${channel.name}`}
+                        className="flex h-6 w-6 items-center justify-center rounded text-text-disabled transition-colors hover:bg-surface-hover hover:text-white"
+                      >
+                        <EditIcon />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingChannel(channel)}
+                        aria-label={`Eliminar canal ${channel.name}`}
+                        className="flex h-6 w-6 items-center justify-center rounded text-text-disabled transition-colors hover:bg-status-dnd/15 hover:text-status-dnd"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {participantIds.length > 0 && (
+                  <div className="pl-8">
+                    <CallParticipantsStack userIds={participantIds} usersById={membersById} size={18} max={6} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {settingsOpen && <GroupSettingsDialog groupId={groupId} isOwner={isOwner} onClose={() => setSettingsOpen(false)} />}
-      {creatingChannel && <CreateChannelDialog groupId={groupId} onClose={() => setCreatingChannel(false)} />}
+      {creatingChannelType && (
+        <CreateChannelDialog groupId={groupId} type={creatingChannelType} onClose={() => setCreatingChannelType(null)} />
+      )}
       {editingChannel && (
         <EditChannelDialog
           groupId={groupId}
@@ -190,7 +266,12 @@ export function GroupRail({ groupId }: { groupId: string }) {
       {deletingChannel && (
         <ConfirmDialog
           title="¿Eliminar este canal?"
-          description={deleteChannelError ?? `Se van a borrar todos los mensajes de #${deletingChannel.name}. Esta acción no se puede deshacer.`}
+          description={
+            deleteChannelError ??
+            (deletingChannel.type === 'voice'
+              ? `Si hay alguien en la llamada de "${deletingChannel.name}" se va a cortar. Esta acción no se puede deshacer.`
+              : `Se van a borrar todos los mensajes de #${deletingChannel.name}. Esta acción no se puede deshacer.`)
+          }
           confirmLabel={deletingChannelBusy ? 'Eliminando...' : 'Eliminar'}
           variant="danger"
           onConfirm={() => void handleDeleteChannel()}
@@ -235,6 +316,15 @@ function ChevronIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-text-description">
       <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+function VoiceIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-text-disabled">
+      <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
     </svg>
   );
 }

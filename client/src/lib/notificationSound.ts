@@ -76,3 +76,21 @@ export function playRingtone(): () => void {
   const intervalId = window.setInterval(triggerRing, RING_INTERVAL_MS);
   return () => window.clearInterval(intervalId);
 }
+
+/**
+ * Tono corto y descendente (al revés del "ding" de mensaje) para marcar que una llamada
+ * terminó, sea porque colgaste vos o porque se cortó del otro lado.
+ */
+export function playCallEndSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+  if (ctx.state === 'suspended') {
+    void ctx.resume().catch(() => {});
+  }
+
+  const now = ctx.currentTime;
+  playTone(ctx, 520, now, 0.18, 0.15);
+  playTone(ctx, 340, now + 0.1, 0.24, 0.15);
+}

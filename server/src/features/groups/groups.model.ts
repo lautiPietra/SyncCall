@@ -29,11 +29,13 @@ export const Group = model<GroupDocument>('Group', groupSchema);
 const channelSchema = new Schema<ChannelDocument>({
   group: { type: Schema.Types.ObjectId, ref: 'Group', required: true },
   name: { type: String, required: true, trim: true, maxlength: 50 },
+  type: { type: String, enum: ['text', 'voice'], default: 'text' },
   createdAt: { type: Date, default: Date.now },
 });
 
-// El orden por createdAt determina cuál es "#general" (el canal más viejo del grupo), sin
-// necesidad de un flag isDefault aparte.
+// El orden por createdAt determina cuál es "#general" (el canal de texto más viejo del grupo),
+// sin necesidad de un flag isDefault aparte. Los canales de voz nunca son elegibles como
+// "canal por defecto" (ver getDefaultChannelId), solo importa el orden dentro de cada type.
 channelSchema.index({ group: 1, createdAt: 1 });
 
 export const Channel = model<ChannelDocument>('Channel', channelSchema);

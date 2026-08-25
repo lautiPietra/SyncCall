@@ -14,12 +14,16 @@ import type {
   CallParticipantInfo,
   CallSignalPayload,
   CallSignalRelayPayload,
+  GroupMessageNewPayload,
+  MessageNewPayload,
 } from '@synccall/shared';
 import { Conversation } from '../../features/conversations/conversations.model';
 import { Channel, Group } from '../../features/groups/groups.model';
 import { areFriends } from '../../features/friends/friends.service';
 import { isUserOnline } from '../presence';
 import * as callRegistry from '../callRegistry';
+import * as messagesService from '../../features/messages/messages.service';
+import * as groupMessagesService from '../../features/groups/groupMessages.service';
 
 const callIdSchema = z.object({ callId: z.string().min(1).max(100) });
 const callInviteSchema = z.object({ conversationId: objectIdSchema });
@@ -40,15 +44,15 @@ export function registerCallHandlers(io: Server, socket: Socket, userId: string)
   });
 
   socket.on(SOCKET_EVENTS.CALL_DECLINE, (payload: CallIdPayload) => {
-    handleCallEndLike(io, userId, payload, SOCKET_EVENTS.CALL_DECLINE);
+    void handleCallEndLike(io, userId, payload, SOCKET_EVENTS.CALL_DECLINE);
   });
 
   socket.on(SOCKET_EVENTS.CALL_CANCEL, (payload: CallIdPayload) => {
-    handleCallEndLike(io, userId, payload, SOCKET_EVENTS.CALL_CANCEL);
+    void handleCallEndLike(io, userId, payload, SOCKET_EVENTS.CALL_CANCEL);
   });
 
   socket.on(SOCKET_EVENTS.CALL_END, (payload: CallIdPayload) => {
-    handleCallEndLike(io, userId, payload, SOCKET_EVENTS.CALL_END);
+    void handleCallEndLike(io, userId, payload, SOCKET_EVENTS.CALL_END);
   });
 
   socket.on(SOCKET_EVENTS.CALL_GROUP_JOIN, (payload: CallGroupJoinPayload) => {
@@ -76,10 +80,47 @@ export function handleCallDisconnect(io: Server, userId: string, socketId: strin
       }
       const relay: CallLifecycleRelayPayload = { callId: entry.id, byUserId: userId };
       targets.forEach((participantId) => io.to(`user:${participantId}`).emit(SOCKET_EVENTS.CALL_END, relay));
+      void recordDmCallHistory(io, entry);
     } else {
       broadcastGroupCallState(io, entry.channelId!, entry.groupId!, entry);
+      if (entry.participants.size === 0) {
+        void recordGroupCallHistory(io, entry, userId);
+      }
     }
   });
+}
+
+/** Registra "se hizo una llamada" en el chat DM si llegó a conectarse (alguien contestó); si nunca se aceptó (se canceló/rechazó sonando), `connectedAt` queda sin setear y no se registra nada. */
+async function recordDmCallHistory(io: Server, entry: callRegistry.CallEntry): Promise<void> {
+  if (!entry.connectedAt || !entry.conversationId || !entry.callerId) {
+    return;
+  }
+  const durationSec = Math.max(1, Math.round((Date.now() - entry.connectedAt) / 1000));
+  const result = await messagesService.recordCallMessage(entry.conversationId, entry.callerId, durationSec);
+  if (!result) {
+    return;
+  }
+  const payload: MessageNewPayload = { message: result.message };
+  io.to(`user:${entry.callerId}`).to(`user:${result.recipientId}`).emit(SOCKET_EVENTS.MESSAGE_NEW, payload);
+}
+
+/** Igual que `recordDmCallHistory` pero para llamadas de grupo: solo cuenta si en algún momento se sumó una segunda persona (si nadie más se unió nunca, no hubo "llamada" real que registrar). */
+async function recordGroupCallHistory(io: Server, entry: callRegistry.CallEntry, actorUserId: string): Promise<void> {
+  if (!entry.connectedAt || !entry.groupId) {
+    return;
+  }
+  const durationSec = Math.max(1, Math.round((Date.now() - entry.connectedAt) / 1000));
+  const group = await Group.findById(entry.groupId).select('members.user').lean();
+  if (!group) {
+    return;
+  }
+  const memberIds = group.members.map((m) => m.user.toString()).filter((id) => id !== actorUserId);
+  const result = await groupMessagesService.createGroupSystemMessage(entry.groupId, actorUserId, 'call_ended', memberIds, durationSec);
+  if (!result) {
+    return;
+  }
+  const payload: GroupMessageNewPayload = { message: result.message };
+  io.to(`group:${entry.groupId}`).emit(SOCKET_EVENTS.GROUP_MESSAGE_NEW, payload);
 }
 
 async function handleCallInvite(io: Server, socket: Socket, userId: string, rawPayload: CallInvitePayload): Promise<void> {
@@ -141,7 +182,7 @@ function handleCallAccept(io: Server, socket: Socket, userId: string, rawPayload
 }
 
 /** Cubre decline/cancel/end: las tres son "terminar una llamada DM", solo cambia qué evento se relaya para que el otro lado muestre el mensaje correcto. */
-function handleCallEndLike(io: Server, userId: string, rawPayload: CallIdPayload, eventName: string): void {
+async function handleCallEndLike(io: Server, userId: string, rawPayload: CallIdPayload, eventName: string): Promise<void> {
   const parsed = callIdSchema.safeParse(rawPayload);
   if (!parsed.success) {
     return;
@@ -159,6 +200,7 @@ function handleCallEndLike(io: Server, userId: string, rawPayload: CallIdPayload
   }
   const relay: CallLifecycleRelayPayload = { callId: ended.id, byUserId: userId };
   targets.forEach((participantId) => io.to(`user:${participantId}`).emit(eventName, relay));
+  await recordDmCallHistory(io, ended);
 }
 
 async function handleGroupCallJoin(io: Server, socket: Socket, userId: string, rawPayload: CallGroupJoinPayload): Promise<void> {
@@ -167,8 +209,12 @@ async function handleGroupCallJoin(io: Server, socket: Socket, userId: string, r
     return;
   }
 
-  const channel = await Channel.findById(parsed.data.channelId).select('group').lean();
+  const channel = await Channel.findById(parsed.data.channelId).select('group type').lean();
   if (!channel) {
+    return;
+  }
+  if (channel.type !== 'voice') {
+    emitCallError(io, userId, 'Ese canal no es de voz');
     return;
   }
 
@@ -199,6 +245,9 @@ async function handleGroupCallLeave(io: Server, userId: string, rawPayload: Call
   }
 
   broadcastGroupCallState(io, parsed.data.channelId, left.groupId, left);
+  if (left.participants.size === 0) {
+    await recordGroupCallHistory(io, left, userId);
+  }
 }
 
 function handleCallSignal(io: Server, userId: string, rawPayload: CallSignalPayload): void {

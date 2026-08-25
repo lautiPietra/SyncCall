@@ -105,6 +105,10 @@ export default {
           '0%': { transform: 'translateX(-140%) skewX(-20deg)' },
           '100%': { transform: 'translateX(320%) skewX(-20deg)' },
         },
+        'eq-bounce': {
+          '0%, 100%': { transform: 'scaleY(0.35)' },
+          '50%': { transform: 'scaleY(1)' },
+        },
       },
       animation: {
         'logo-pop': 'logo-pop 0.6s ease-out both',
@@ -122,6 +126,7 @@ export default {
         'badge-pop': 'badge-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both',
         'ember-rise': 'ember-rise 2.6s ease-in-out infinite',
         'shimmer-sweep': 'shimmer-sweep 3.4s ease-in-out infinite',
+        'eq-bounce': 'eq-bounce 0.7s ease-in-out infinite',
       },
     },
   },

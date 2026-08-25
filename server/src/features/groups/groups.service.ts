@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import type { GroupInvitePreview, GroupMemberDetail, GroupSummary, PendingGroupInvite } from '@synccall/shared';
+import type { ChannelType, GroupInvitePreview, GroupMemberDetail, GroupSummary, PendingGroupInvite } from '@synccall/shared';
 import { Group, Channel } from './groups.model';
 import type { ChannelDocument, GroupDocument } from './groups.types';
 import { GroupInvite } from './groupInvites.model';
@@ -13,6 +13,7 @@ import { ApiError } from '../../lib/ApiError';
 
 const MAX_MEMBERS = 50;
 const DEFAULT_CHANNEL_NAME = 'general';
+const DEFAULT_VOICE_CHANNEL_NAME = 'general';
 
 export function assertMember(group: { members: { user: Types.ObjectId }[] }, userId: string): void {
   const isMember = group.members.some((m) => m.user.toString() === userId);
@@ -47,7 +48,7 @@ export async function createGroup(
   ownerId: string,
   name: string,
   memberIds: string[],
-): Promise<{ group: GroupDocument; defaultChannel: ChannelDocument; invites: GroupInviteDocument[] }> {
+): Promise<{ group: GroupDocument; defaultChannel: ChannelDocument; defaultVoiceChannel: ChannelDocument; invites: GroupInviteDocument[] }> {
   const uniqueMemberIds = [...new Set(memberIds)].filter((id) => id !== ownerId);
 
   const friendChecks = await Promise.all(uniqueMemberIds.map((id) => areFriends(ownerId, id)));
@@ -67,13 +68,14 @@ export async function createGroup(
     members: [{ user: ownerId, role: 'owner' }],
   });
 
-  const defaultChannel = await Channel.create({ group: group._id, name: DEFAULT_CHANNEL_NAME });
+  const defaultChannel = await Channel.create({ group: group._id, name: DEFAULT_CHANNEL_NAME, type: 'text' });
+  const defaultVoiceChannel = await Channel.create({ group: group._id, name: DEFAULT_VOICE_CHANNEL_NAME, type: 'voice' });
 
   const invites = await Promise.all(
     uniqueMemberIds.map((memberId) => GroupInvite.create({ group: group._id, invitedUser: memberId, invitedBy: ownerId })),
   );
 
-  return { group, defaultChannel, invites };
+  return { group, defaultChannel, defaultVoiceChannel, invites };
 }
 
 export async function listMyGroups(userId: string): Promise<GroupSummary[]> {
@@ -85,7 +87,7 @@ export async function listMyGroups(userId: string): Promise<GroupSummary[]> {
   const groupIds = groups.map((g) => g._id);
   const [defaultChannels, unreadTotals] = await Promise.all([
     Channel.aggregate<{ _id: Types.ObjectId; channelId: Types.ObjectId }>([
-      { $match: { group: { $in: groupIds } } },
+      { $match: { group: { $in: groupIds }, type: 'text' } },
       { $sort: { group: 1, createdAt: 1 } },
       { $group: { _id: '$group', channelId: { $first: '$_id' } } },
     ]),
@@ -425,19 +427,21 @@ export async function leaveGroup(groupId: string, userId: string): Promise<Group
   return group;
 }
 
-export async function createChannel(groupId: string, ownerId: string, name: string): Promise<ChannelDocument> {
+export async function createChannel(groupId: string, ownerId: string, name: string, type: ChannelType): Promise<ChannelDocument> {
   const group = await Group.findById(groupId);
   if (!group) {
     throw new ApiError(404, 'Grupo no encontrado');
   }
   assertOwnerOrAdmin(group, ownerId);
 
-  const existing = await Channel.findOne({ group: groupId, name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' } });
+  // El nombre solo tiene que ser único dentro del mismo tipo: un canal de texto y uno de voz
+  // pueden llamarse igual (son categorías separadas, igual que en Discord).
+  const existing = await Channel.findOne({ group: groupId, type, name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' } });
   if (existing) {
     throw new ApiError(409, 'Ya existe un canal con ese nombre');
   }
 
-  return Channel.create({ group: groupId, name });
+  return Channel.create({ group: groupId, name, type });
 }
 
 export async function renameChannel(groupId: string, channelId: string, actorId: string, name: string): Promise<ChannelDocument> {
@@ -454,6 +458,7 @@ export async function renameChannel(groupId: string, channelId: string, actorId:
 
   const existing = await Channel.findOne({
     group: groupId,
+    type: channel.type,
     _id: { $ne: channelId },
     name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' },
   });
@@ -479,9 +484,13 @@ export async function deleteChannel(groupId: string, channelId: string, ownerId:
     throw new ApiError(404, 'Canal no encontrado');
   }
 
-  const channelCount = await Channel.countDocuments({ group: groupId });
-  if (channelCount <= 1) {
-    throw new ApiError(400, 'No podés eliminar el único canal del grupo');
+  // Solo hace falta garantizar que quede al menos un canal de TEXTO (ahí vive el historial y
+  // los mensajes de sistema del grupo); un grupo puede quedarse sin ningún canal de voz.
+  if (channel.type === 'text') {
+    const textChannelCount = await Channel.countDocuments({ group: groupId, type: 'text' });
+    if (textChannelCount <= 1) {
+      throw new ApiError(400, 'No podés eliminar el único canal de texto del grupo');
+    }
   }
 
   await GroupMessage.deleteMany({ channel: channelId });
@@ -490,9 +499,9 @@ export async function deleteChannel(groupId: string, channelId: string, ownerId:
 }
 
 export async function getDefaultChannelId(groupId: string): Promise<string> {
-  const channel = await Channel.findOne({ group: groupId }).sort({ createdAt: 1 }).select('_id').lean();
+  const channel = await Channel.findOne({ group: groupId, type: 'text' }).sort({ createdAt: 1 }).select('_id').lean();
   if (!channel) {
-    throw new ApiError(404, 'El grupo no tiene canales');
+    throw new ApiError(404, 'El grupo no tiene canales de texto');
   }
   return channel._id.toString();
 }

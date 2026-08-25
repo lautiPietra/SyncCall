@@ -12,12 +12,15 @@ export interface Group {
   createdAt: string;
 }
 
+export type ChannelType = 'text' | 'voice';
+
 export interface Channel {
   id: string;
   group: string;
   name: string;
+  type: ChannelType;
   createdAt: string;
-  /** Mensajes sin leer de este canal para el usuario que pide el grupo. */
+  /** Mensajes sin leer de este canal para el usuario que pide el grupo. Siempre 0 en un canal de voz. */
   unreadCount: number;
 }
 

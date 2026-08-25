@@ -17,10 +17,12 @@ import { useSocketConnected } from './SocketProvider';
 import { useToast } from './ToastProvider';
 import { socket } from '../lib/socketClient';
 import { ICE_SERVERS } from '../lib/webrtcConfig';
-import { playRingtone } from '../lib/notificationSound';
+import { playCallEndSound, playRingtone } from '../lib/notificationSound';
 import { showDesktopNotification } from '../lib/desktopNotifications';
 
 type CallStatus = 'outgoing-ringing' | 'connecting' | 'active';
+/** Si la pantalla completa de la llamada está visible o el usuario la minimizó para navegar por el resto de la app. */
+type CallViewMode = 'full' | 'minimized';
 
 interface CallParticipantState {
   stream: MediaStream | null;
@@ -62,6 +64,7 @@ interface CallContextValue {
   incomingCall: IncomingCall | null;
   groupCallState: Map<string, GroupCallAmbient>;
   micError: string | null;
+  callViewMode: CallViewMode;
   startDmCall: (conversationId: string, toUserId: string) => void;
   acceptIncomingCall: () => void;
   declineIncomingCall: () => void;
@@ -71,6 +74,8 @@ interface CallContextValue {
   leaveGroupCall: () => void;
   toggleMute: () => void;
   retryMic: () => void;
+  minimizeCall: () => void;
+  expandCall: () => void;
 }
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
@@ -88,6 +93,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [groupCallState, setGroupCallState] = useState<Map<string, GroupCallAmbient>>(new Map());
   const [micError, setMicError] = useState<string | null>(null);
+  const [callViewMode, setCallViewMode] = useState<CallViewMode>('full');
 
   const callRef = useRef<ActiveCall | null>(null);
   const incomingCallRef = useRef<IncomingCall | null>(null);
@@ -125,6 +131,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   /** Cierra todo lo que haya quedado abierto (peers, mic, ringtone, timers) y resetea el estado a "sin llamada". */
   function cleanupCall(): void {
+    // Solo suena si la llamada había pasado de "sonando" (nadie atendió todavía): cortar un
+    // intento que nunca se conectó no se siente como "colgar" una llamada de verdad.
+    if (callRef.current && callRef.current.status !== 'outgoing-ringing') {
+      playCallEndSound();
+    }
     peerConnectionsRef.current.forEach((pc) => pc.close());
     peerConnectionsRef.current.clear();
     pendingIceRef.current.clear();
@@ -140,6 +151,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setCall(null);
     setIncomingCall(null);
     setMicError(null);
+    setCallViewMode('full');
   }
 
   /** Nunca aborta la llamada por esto: si no hay mic (permiso negado, sin hardware, etc.) se sigue en modo "solo escuchar" en vez de bloquear a todo el mundo. `micUnavailableRef` evita repetir el prompt de permiso por cada peer nuevo — para reintentar hace falta retryMic(). */
@@ -568,11 +580,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  function minimizeCall(): void {
+    if (callRef.current) {
+      setCallViewMode('minimized');
+    }
+  }
+
+  function expandCall(): void {
+    setCallViewMode('full');
+  }
+
   const value: CallContextValue = {
     call,
     incomingCall,
     groupCallState,
     micError,
+    callViewMode,
     startDmCall,
     acceptIncomingCall,
     declineIncomingCall,
@@ -582,6 +605,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     leaveGroupCall: hangUp,
     toggleMute,
     retryMic,
+    minimizeCall,
+    expandCall,
   };
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;

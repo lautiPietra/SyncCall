@@ -14,7 +14,7 @@ export interface GroupMessageSenderInfo {
 export type GroupMessageType = 'text' | 'system' | 'image' | 'audio';
 
 /** Eventos que generan un mensaje de sistema en el canal por defecto del grupo. */
-export type GroupSystemEvent = 'member_left' | 'member_removed';
+export type GroupSystemEvent = 'member_left' | 'member_removed' | 'call_ended';
 
 export interface GroupMessage {
   id: string;

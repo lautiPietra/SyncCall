@@ -103,9 +103,11 @@ describe('administración del grupo (solo el dueño)', () => {
     const member = await createTestUser();
     const outsider = await createTestUser();
     await makeFriends(owner._id.toString(), member._id.toString());
-    const { group, defaultChannel } = await groupsService.createGroup(owner._id.toString(), 'Grupo', [member._id.toString()]);
+    const { group, defaultChannel, defaultVoiceChannel } = await groupsService.createGroup(owner._id.toString(), 'Grupo', [
+      member._id.toString(),
+    ]);
     await acceptInvite(group._id.toString(), member._id.toString());
-    return { owner, member, outsider, group, defaultChannel };
+    return { owner, member, outsider, group, defaultChannel, defaultVoiceChannel };
   }
 
   it('un no-dueño no puede actualizar el grupo', async () => {
@@ -120,7 +122,7 @@ describe('administración del grupo (solo el dueño)', () => {
     const memberId = member._id.toString();
 
     await expect(groupsService.deleteGroup(group._id.toString(), memberId)).rejects.toThrow();
-    await expect(groupsService.createChannel(group._id.toString(), memberId, 'random')).rejects.toThrow();
+    await expect(groupsService.createChannel(group._id.toString(), memberId, 'random', 'text')).rejects.toThrow();
     await expect(groupsService.deleteChannel(group._id.toString(), defaultChannel._id.toString(), memberId)).rejects.toThrow();
     await expect(groupsService.inviteMember(group._id.toString(), memberId, outsider._id.toString())).rejects.toThrow();
     await expect(groupsService.removeMember(group._id.toString(), memberId, outsider._id.toString())).rejects.toThrow();
@@ -135,17 +137,36 @@ describe('administración del grupo (solo el dueño)', () => {
     expect(updated.name).toBe('Renombrado');
     expect(updated.description).toBe('Una descripción');
 
-    const channel = await groupsService.createChannel(group._id.toString(), owner._id.toString(), 'random');
+    const channel = await groupsService.createChannel(group._id.toString(), owner._id.toString(), 'random', 'text');
     expect(channel.name).toBe('random');
 
     await groupsService.deleteChannel(group._id.toString(), channel._id.toString(), owner._id.toString());
+    // Quedan los 2 canales por defecto (texto + voz) que se crean junto con el grupo.
     const remaining = await Channel.countDocuments({ group: group._id });
-    expect(remaining).toBe(1);
+    expect(remaining).toBe(2);
+  });
+
+  it('el dueño puede crear y borrar canales de voz, y aparecen unidos por nombre entre tipos', async () => {
+    const { owner, group, defaultVoiceChannel } = await setup();
+
+    // "general" ya existe como canal de voz por defecto, pero un canal de TEXTO con el mismo
+    // nombre no debería chocar (son namespaces separados por tipo).
+    const textChannel = await groupsService.createChannel(group._id.toString(), owner._id.toString(), 'general-2', 'text');
+    expect(textChannel.type).toBe('text');
+
+    const voiceChannel = await groupsService.createChannel(group._id.toString(), owner._id.toString(), 'random-voz', 'voice');
+    expect(voiceChannel.type).toBe('voice');
+
+    // A diferencia de los canales de texto, no hay problema en quedarse sin ningún canal de voz.
+    await groupsService.deleteChannel(group._id.toString(), defaultVoiceChannel._id.toString(), owner._id.toString());
+    await groupsService.deleteChannel(group._id.toString(), voiceChannel._id.toString(), owner._id.toString());
+    const remainingVoice = await Channel.countDocuments({ group: group._id, type: 'voice' });
+    expect(remainingVoice).toBe(0);
   });
 
   it('el dueño puede renombrar un canal, pero no a un nombre ya usado', async () => {
     const { owner, group, defaultChannel } = await setup();
-    const channel = await groupsService.createChannel(group._id.toString(), owner._id.toString(), 'random');
+    const channel = await groupsService.createChannel(group._id.toString(), owner._id.toString(), 'random', 'text');
 
     const renamed = await groupsService.renameChannel(group._id.toString(), channel._id.toString(), owner._id.toString(), 'renombrado');
     expect(renamed.name).toBe('renombrado');
@@ -166,11 +187,11 @@ describe('administración del grupo (solo el dueño)', () => {
     ).rejects.toThrow('Solo el dueño o un administrador del grupo puede hacer esto');
   });
 
-  it('no se puede borrar el único canal del grupo', async () => {
+  it('no se puede borrar el único canal de texto del grupo', async () => {
     const { owner, group, defaultChannel } = await setup();
     await expect(
       groupsService.deleteChannel(group._id.toString(), defaultChannel._id.toString(), owner._id.toString()),
-    ).rejects.toThrow('No podés eliminar el único canal del grupo');
+    ).rejects.toThrow('No podés eliminar el único canal de texto del grupo');
   });
 
   it('el dueño puede cancelar una invitación pendiente', async () => {

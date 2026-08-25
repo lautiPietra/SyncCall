@@ -85,6 +85,9 @@ export async function sendGroupMessage(
   if (!channel) {
     throw new ApiError(404, 'Canal no encontrado');
   }
+  if (channel.type !== 'text') {
+    throw new ApiError(400, 'Este canal es de voz, no admite mensajes');
+  }
   const group = await assertGroupAndMembership(channel.group.toString(), senderId);
 
   const type: GroupMessageType = input.type ?? (input.mediaUrl ? 'image' : 'text');
@@ -145,6 +148,9 @@ export async function getGroupMessages(
   const channel = await Channel.findById(channelId).lean();
   if (!channel) {
     throw new ApiError(404, 'Canal no encontrado');
+  }
+  if (channel.type !== 'text') {
+    throw new ApiError(400, 'Este canal es de voz, no tiene mensajes');
   }
   const group = await assertGroupAndMembership(channel.group.toString(), userId);
   const joinedAt = group.members.find((m) => m.user.toString() === userId)!.joinedAt;
@@ -239,8 +245,9 @@ export async function createGroupSystemMessage(
   actorUserId: string,
   systemEvent: GroupSystemEvent,
   remainingMemberIds: string[],
+  durationSec?: number,
 ): Promise<{ message: GroupMessageShape; groupId: string } | null> {
-  const channel = await Channel.findOne({ group: groupId }).sort({ createdAt: 1 });
+  const channel = await Channel.findOne({ group: groupId, type: 'text' }).sort({ createdAt: 1 });
   if (!channel) {
     return null;
   }
@@ -255,6 +262,7 @@ export async function createGroupSystemMessage(
     ciphertext,
     iv,
     authTag,
+    durationSec,
   });
 
   if (remainingMemberIds.length > 0) {

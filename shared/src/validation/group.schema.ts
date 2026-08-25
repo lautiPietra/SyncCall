@@ -28,7 +28,9 @@ export const addGroupMemberSchema = z.object({ userId: objectIdSchema });
 
 export const groupMemberParamsSchema = z.object({ id: objectIdSchema, userId: objectIdSchema });
 
-export const createChannelSchema = z.object({ name: channelNameSchema });
+export const channelTypeSchema = z.enum(['text', 'voice']);
+
+export const createChannelSchema = z.object({ name: channelNameSchema, type: channelTypeSchema.default('text') });
 
 export const updateChannelSchema = z.object({ name: channelNameSchema });
 

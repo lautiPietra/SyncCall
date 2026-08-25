@@ -86,7 +86,14 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
         if (desktopNotificationsEnabled) {
           const otherUser = conversationsRef.current.find((c) => c.id === message.conversation)?.otherUser;
           showDesktopNotification(otherUser?.displayName ?? 'Nuevo mensaje', {
-            body: message.type === 'text' ? message.content : message.type === 'image' ? 'Te mandó una imagen' : 'Te mandó un audio',
+            body:
+              message.type === 'text'
+                ? message.content
+                : message.type === 'image'
+                  ? 'Te mandó una imagen'
+                  : message.type === 'call'
+                    ? 'Llamada de voz'
+                    : 'Te mandó un audio',
             icon: otherUser?.avatarUrl,
             tag: message.conversation,
           });

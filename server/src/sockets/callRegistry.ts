@@ -9,7 +9,7 @@ interface CallParticipant {
   joinedAt: number;
 }
 
-interface CallEntry {
+export interface CallEntry {
   id: string;
   kind: 'dm' | 'group';
   contextKey: string;
@@ -19,6 +19,12 @@ interface CallEntry {
   status: CallStatus;
   /** DM: el callee que todavía no aceptó. */
   ringingFor?: string;
+  /** DM: quién la inició (para el historial, `sender` del mensaje de "se hizo una llamada"). */
+  callerId?: string;
+  /** Cuándo pasó a tener a alguien más además de quien la armó (DM: se acepta; grupo: se une
+   * el segundo participante). Si nunca se pone, no se registra historial al terminar: nadie
+   * llegó a contestar / a la llamada de grupo nunca se sumó una segunda persona. */
+  connectedAt?: number;
   participants: Map<string, CallParticipant>;
 }
 
@@ -64,6 +70,7 @@ export function createDmCall(conversationId: string, callerId: string, callerSoc
     conversationId,
     status: 'ringing',
     ringingFor: calleeId,
+    callerId,
     participants: new Map([[callerId, { socketId: callerSocketId, joinedAt: Date.now() }]]),
   };
 
@@ -82,6 +89,7 @@ export function acceptDmCall(callId: string, calleeId: string, calleeSocketId: s
 
   entry.status = 'active';
   entry.ringingFor = undefined;
+  entry.connectedAt = Date.now();
   entry.participants.set(calleeId, { socketId: calleeSocketId, joinedAt: Date.now() });
   userActiveCallId.set(calleeId, entry.id);
   return entry;
@@ -142,6 +150,9 @@ export function joinGroupCall(channelId: string, groupId: string, userId: string
     return { ok: false, reason: 'full' };
   }
 
+  if (!entry.connectedAt && entry.participants.size === 1) {
+    entry.connectedAt = Date.now();
+  }
   entry.participants.set(userId, { socketId, joinedAt: Date.now() });
   userActiveCallId.set(userId, entry.id);
   return { ok: true, entry };
@@ -162,6 +173,24 @@ export function leaveGroupCall(channelId: string, userId: string): CallEntry | n
     callsById.delete(entry.id);
     callsByContext.delete(contextKey);
   }
+  return entry;
+}
+
+/** Corta de una una llamada de grupo entera (todos los participantes), para cuando el canal de
+ * voz en el que está se borra: sin esto la entry quedaría huérfana en el registro (nadie la
+ * puede volver a tocar porque el canal ya no existe) y esos usuarios quedarían con la pantalla
+ * de llamada trabada. null = no había ninguna llamada activa en ese canal. */
+export function forceEndGroupCall(channelId: string): CallEntry | null {
+  const contextKey = groupContextKey(channelId);
+  const callId = callsByContext.get(contextKey);
+  const entry = callId ? callsById.get(callId) : undefined;
+  if (!entry) {
+    return null;
+  }
+
+  entry.participants.forEach((_participant, participantId) => userActiveCallId.delete(participantId));
+  callsById.delete(entry.id);
+  callsByContext.delete(contextKey);
   return entry;
 }
 

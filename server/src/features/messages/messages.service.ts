@@ -194,6 +194,45 @@ export async function sendMessage(
   };
 }
 
+/**
+ * Registra en el historial que se hizo una llamada de voz que llegó a conectarse. No pasa por
+ * el flujo normal de `sendMessage` (solicitud de mensajes, chequeo de amistad, contenido vacío):
+ * la dispara call.handlers.ts cuando una llamada ya validada como amigos al armarse termina,
+ * no una acción del usuario sobre el chat.
+ */
+export async function recordCallMessage(
+  conversationId: string,
+  callerId: string,
+  durationSec: number,
+): Promise<{ message: Message; recipientId: string } | null> {
+  const conversation = await Conversation.findById(conversationId);
+  if (!conversation) {
+    return null;
+  }
+  const callerIsA = conversation.participantA.toString() === callerId;
+  const recipientId = (callerIsA ? conversation.participantB : conversation.participantA).toString();
+
+  const { ciphertext, iv, authTag } = encryptText('');
+  const doc = await MessageModel.create({
+    conversation: conversation._id,
+    sender: callerId,
+    type: 'call',
+    ciphertext,
+    iv,
+    authTag,
+    durationSec,
+  });
+
+  const recipientCounterField = callerIsA ? 'unreadCountB' : 'unreadCountA';
+  const recipientHiddenField = callerIsA ? 'hiddenForB' : 'hiddenForA';
+  await Conversation.updateOne(
+    { _id: conversation._id },
+    { $set: { lastMessageAt: doc.createdAt, [recipientHiddenField]: false }, $inc: { [recipientCounterField]: 1 } },
+  );
+
+  return { message: decryptMessage(doc), recipientId };
+}
+
 export async function getMessages(
   conversationId: string,
   userId: string,

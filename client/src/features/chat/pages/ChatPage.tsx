@@ -358,7 +358,10 @@ export function ChatPage() {
                     <div className="h-px flex-1 bg-surface-border/60" />
                   </div>
                   <div className="flex flex-col gap-3">
-                    {group.messages.map((msg) => (
+                    {group.messages.map((msg) =>
+                      msg.type === 'call' ? (
+                        <CallHistoryMessage key={msg.id} message={msg} />
+                      ) : (
                       <MessageBubble
                         key={msg.id}
                         message={msg}
@@ -387,7 +390,8 @@ export function ChatPage() {
                           setReactingToId(null);
                         }}
                       />
-                    ))}
+                      ),
+                    )}
                   </div>
                 </div>
               ))}
@@ -705,6 +709,18 @@ function MessageBubble({
           {message.editedAt && !message.deleted ? ' · editado' : ''}
         </span>
       </div>
+    </div>
+  );
+}
+
+function CallHistoryMessage({ message }: { message: Message }) {
+  return (
+    <div className="flex items-center justify-center gap-2 px-2 py-1 text-xs text-text-disabled">
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-hover text-status-online">
+        <CallIcon />
+      </span>
+      <span>Se realizó una llamada de voz · {formatDuration(message.durationSec ?? 0)}</span>
+      <span className="text-[11px]">{TIME_FORMATTER.format(new Date(message.createdAt))}</span>
     </div>
   );
 }

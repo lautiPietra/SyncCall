@@ -7,7 +7,7 @@ const groupMessageSchema = new Schema<GroupMessageDocument>({
   group: { type: Schema.Types.ObjectId, ref: 'Group', required: true },
   sender: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   type: { type: String, enum: ['text', 'system', 'image', 'audio'], default: 'text' },
-  systemEvent: { type: String, enum: ['member_left', 'member_removed'] },
+  systemEvent: { type: String, enum: ['member_left', 'member_removed', 'call_ended'] },
   ciphertext: { type: String, default: '' },
   iv: { type: String, required: true },
   authTag: { type: String, required: true },

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ChannelType } from '@synccall/shared';
 import * as groupsApi from '../api/groups.api';
 import { ApiClientError } from '../../../lib/apiClient';
 import { Modal } from '../../../components/ui/Modal';
@@ -7,7 +8,7 @@ import { Input } from '../../../components/ui/Input';
 
 const CHANNEL_NAME_REGEX = /^[a-z0-9-]*$/;
 
-export function CreateChannelDialog({ groupId, onClose }: { groupId: string; onClose: () => void }) {
+export function CreateChannelDialog({ groupId, type, onClose }: { groupId: string; type: ChannelType; onClose: () => void }) {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -26,7 +27,7 @@ export function CreateChannelDialog({ groupId, onClose }: { groupId: string; onC
     setSaving(true);
     setError(null);
     try {
-      await groupsApi.createChannel(groupId, name.trim());
+      await groupsApi.createChannel(groupId, name.trim(), type);
       onClose();
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'No se pudo crear el canal');
@@ -37,7 +38,7 @@ export function CreateChannelDialog({ groupId, onClose }: { groupId: string; onC
 
   return (
     <Modal
-      title="Crear canal de texto"
+      title={type === 'voice' ? 'Crear canal de voz' : 'Crear canal de texto'}
       onClose={onClose}
       footer={
         <>

@@ -23,6 +23,7 @@ import { SettingsDialog } from '../features/profile/components/SettingsDialog';
 import { IncomingCallModal } from '../features/calls/components/IncomingCallModal';
 import { CallBar } from '../features/calls/components/CallBar';
 import { CallScreen } from '../features/calls/components/CallScreen';
+import { MinimizedCallWidget } from '../features/calls/components/MinimizedCallWidget';
 
 export function AppLayout() {
   const { user, logout } = useAuth();
@@ -338,6 +339,7 @@ export function AppLayout() {
       <CallBar />
       <IncomingCallModal />
       <CallScreen />
+      <MinimizedCallWidget />
 
       {confirmingLogout && (
         <ConfirmDialog
