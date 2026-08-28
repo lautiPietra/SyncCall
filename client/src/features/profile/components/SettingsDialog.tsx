@@ -84,8 +84,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1">
-          <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-surface-border/60 bg-sidebar p-3 sm:w-52">
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+          <nav className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto border-b border-surface-border/60 bg-sidebar p-2 sm:w-52 sm:flex-col sm:gap-0.5 sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3">
             {CATEGORIES.map(({ id, label, icon: Icon }) => (
               <SettingsNavButton key={id} active={category === id} onClick={() => setCategory(id)} icon={<Icon />}>
                 {label}
@@ -93,20 +93,22 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             ))}
           </nav>
 
-          <div className="no-scrollbar flex-1 overflow-y-auto p-6">
+          <div className="no-scrollbar flex-1 overflow-y-auto p-4 sm:p-6">
             {category === 'account' && (
               <div className="flex flex-col gap-5">
                 <SettingsCard>
-                  <div className="flex items-center gap-4 p-5">
-                    <FramedAvatar frame={user.avatarFrame} src={user.avatarUrl} alt={user.displayName} size={58} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-white">{user.displayName}</p>
-                      <p className="truncate text-xs text-text-description">@{user.username}</p>
-                      <p className="mt-0.5 text-[11px] text-text-disabled">
-                        Miembro desde {MEMBER_SINCE_FORMATTER.format(new Date(user.createdAt))}
-                      </p>
+                  <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:gap-4">
+                    <div className="flex items-center gap-4">
+                      <FramedAvatar frame={user.avatarFrame} src={user.avatarUrl} alt={user.displayName} size={58} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-white">{user.displayName}</p>
+                        <p className="truncate text-xs text-text-description">@{user.username}</p>
+                        <p className="mt-0.5 text-[11px] text-text-disabled">
+                          Miembro desde {MEMBER_SINCE_FORMATTER.format(new Date(user.createdAt))}
+                        </p>
+                      </div>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={goToProfile} className="shrink-0">
+                    <Button variant="secondary" size="sm" onClick={goToProfile} className="w-full shrink-0 sm:w-auto">
                       Editar perfil
                     </Button>
                   </div>
@@ -524,12 +526,12 @@ function SettingsCard({ children }: { children: ReactNode }) {
 
 function SettingRow({ title, description, control }: { title: string; description?: string; control: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 p-5">
+    <div className="flex flex-col gap-2.5 p-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0">
         <p className="text-sm font-medium text-white">{title}</p>
         {description && <p className="mt-0.5 text-xs text-text-description">{description}</p>}
       </div>
-      {control}
+      <div className="sm:shrink-0">{control}</div>
     </div>
   );
 }
@@ -549,12 +551,12 @@ function SettingsNavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+      className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors ${
         active ? 'bg-surface-hover text-white' : 'text-text-description hover:bg-surface-hover/60 hover:text-white'
       }`}
     >
       {icon}
-      <span className="truncate">{children}</span>
+      <span>{children}</span>
     </button>
   );
 }

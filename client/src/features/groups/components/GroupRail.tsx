@@ -89,7 +89,7 @@ export function GroupRail({ groupId }: { groupId: string }) {
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="relative shrink-0 border-b border-surface-border/60 px-3 py-3">
         <button
           type="button"
@@ -131,7 +131,7 @@ export function GroupRail({ groupId }: { groupId: string }) {
         )}
       </div>
 
-      <div className="no-scrollbar flex-1 overflow-y-auto px-2 pb-2 pt-2">
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2 pt-2">
         <div className="px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wide text-text-disabled" title="Todavía no disponible">
           Eventos
         </div>

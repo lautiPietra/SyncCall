@@ -216,7 +216,7 @@ export function AppLayout() {
 
             {conversationsError && <p className="px-4 pb-2 text-xs text-status-dnd">{conversationsError}</p>}
 
-            <div className="no-scrollbar mt-1 flex-1 overflow-y-auto px-2 pb-2">
+            <div className="no-scrollbar mt-1 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
               {conversationsLoading ? (
                 <div className="flex justify-center py-6">
                   <Spinner size={18} />

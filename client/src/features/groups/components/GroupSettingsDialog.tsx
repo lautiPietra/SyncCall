@@ -210,7 +210,7 @@ export function GroupSettingsDialog({ groupId, isOwner, onClose }: { groupId: st
 
   return (
     <>
-      <Modal title="Configuración del grupo" onClose={onClose}>
+      <Modal title="Configuración del grupo" onClose={onClose} maxWidth="max-w-lg">
         <div className="mb-4 flex gap-1 border-b border-surface-border/60">
           <TabButton active={tab === 'general'} onClick={() => setTab('general')}>
             General
@@ -270,31 +270,42 @@ export function GroupSettingsDialog({ groupId, isOwner, onClose }: { groupId: st
                   const roleLabel = role === 'owner' ? 'Dueño' : role === 'admin' ? 'Administrador' : 'Miembro';
                   const canRemoveThis = role !== 'owner' && (isOwner || role !== 'admin');
                   return (
-                    <div key={m.user.id} className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-                      <FramedAvatar frame={m.user.avatarFrame} src={m.user.avatarUrl} alt={m.user.displayName} size={28} />
-                      <span className="min-w-0 flex-1 truncate text-sm text-white">{m.user.displayName}</span>
-                      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">{roleLabel}</span>
-                      {isOwner && role !== 'owner' && (
-                        <button
-                          type="button"
-                          onClick={() => void handleToggleRole(m.user.id, role)}
-                          disabled={changingRoleUserId === m.user.id}
-                          className="shrink-0 text-xs text-text-description transition-colors hover:text-white hover:underline disabled:opacity-60"
-                        >
-                          {role === 'admin' ? 'Quitar admin' : 'Hacer admin'}
-                        </button>
-                      )}
-                      {canRemoveThis && (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmingRemove({ userId: m.user.id, displayName: m.user.displayName })}
-                          disabled={removingUserId === m.user.id}
-                          aria-label={`Sacar a ${m.user.displayName} del grupo`}
-                          className="shrink-0 text-xs text-status-dnd transition-colors hover:underline disabled:opacity-60"
-                        >
-                          Sacar
-                        </button>
-                      )}
+                    <div
+                      key={m.user.id}
+                      className="flex flex-col gap-2 rounded-md px-2 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <FramedAvatar frame={m.user.avatarFrame} src={m.user.avatarUrl} alt={m.user.displayName} size={40} />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm text-white">{m.user.displayName}</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-text-disabled">{roleLabel}</p>
+                        </div>
+                      </div>
+                      {(isOwner && role !== 'owner') || canRemoveThis ? (
+                        <div className="flex shrink-0 items-center gap-4 pl-[52px] sm:gap-2.5 sm:pl-0">
+                          {isOwner && (
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleRole(m.user.id, role)}
+                              disabled={changingRoleUserId === m.user.id}
+                              className="shrink-0 text-xs text-text-description transition-colors hover:text-white hover:underline disabled:opacity-60"
+                            >
+                              {role === 'admin' ? 'Quitar admin' : 'Hacer admin'}
+                            </button>
+                          )}
+                          {canRemoveThis && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingRemove({ userId: m.user.id, displayName: m.user.displayName })}
+                              disabled={removingUserId === m.user.id}
+                              aria-label={`Sacar a ${m.user.displayName} del grupo`}
+                              className="shrink-0 text-xs text-status-dnd transition-colors hover:underline disabled:opacity-60"
+                            >
+                              Sacar
+                            </button>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -308,21 +319,28 @@ export function GroupSettingsDialog({ groupId, isOwner, onClose }: { groupId: st
                 </span>
                 <div className="mt-2 flex flex-col gap-0.5">
                   {pendingInvites.map((invite) => (
-                    <div key={invite.invitedUser.id} className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-                      <FramedAvatar
-                        frame={invite.invitedUser.avatarFrame}
-                        src={invite.invitedUser.avatarUrl}
-                        alt={invite.invitedUser.displayName}
-                        size={28}
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm text-text-description">{invite.invitedUser.displayName}</span>
-                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-disabled">Esperando</span>
+                    <div
+                      key={invite.invitedUser.id}
+                      className="flex flex-col gap-2 rounded-md px-2 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <FramedAvatar
+                          frame={invite.invitedUser.avatarFrame}
+                          src={invite.invitedUser.avatarUrl}
+                          alt={invite.invitedUser.displayName}
+                          size={40}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm text-text-description">{invite.invitedUser.displayName}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-text-disabled">Esperando</p>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => void handleCancelInvite(invite.invitedUser.id)}
                         disabled={cancelingUserId === invite.invitedUser.id}
                         aria-label={`Cancelar invitación a ${invite.invitedUser.displayName}`}
-                        className="shrink-0 text-xs text-status-dnd transition-colors hover:underline disabled:opacity-60"
+                        className="shrink-0 pl-[52px] text-xs text-status-dnd transition-colors hover:underline disabled:opacity-60 sm:pl-0"
                       >
                         Cancelar
                       </button>

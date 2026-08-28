@@ -54,6 +54,7 @@ export function FriendsPage() {
   const [openSidebarMenuId, setOpenSidebarMenuId] = useState<string | null>(null);
   const [viewingFriendId, setViewingFriendId] = useState<string | null>(null);
   const [friendQuery, setFriendQuery] = useState('');
+  const [showActiveMobile, setShowActiveMobile] = useState(false);
 
   const friendIds = new Set(friends.map((f) => f.user.id));
   const outgoingByUserId = new Map(outgoing.map((r) => [r.user.id, r.id]));
@@ -97,30 +98,60 @@ export function FriendsPage() {
     : baseFriends;
 
   return (
-    <div className="flex min-h-full">
+    <div className="flex min-h-full flex-col lg:flex-row">
       <div className="min-w-0 flex-1 bg-card px-6 py-8">
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-surface-border/60 pb-4">
-          <FriendsGroupIcon className="mr-1.5 text-text-description" />
-          <TabButton active={tab === 'all'} onClick={() => setTab('all')}>
-            Todos
-          </TabButton>
-          <TabButton active={tab === 'online'} onClick={() => setTab('online')}>
-            En línea
-          </TabButton>
-          <TabButton active={tab === 'pending'} onClick={() => setTab('pending')}>
-            Pendientes
-            <CountBadge count={pendingCount} className="ml-1.5 px-2 py-0.5 text-xs" />
-          </TabButton>
+        <div className="flex flex-wrap items-center gap-2 border-b border-surface-border/60 pb-4">
+          <FriendsGroupIcon className="mr-1 hidden text-text-description sm:block" />
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-1.5">
+            <TabButton active={tab === 'all'} onClick={() => setTab('all')}>
+              Todos
+            </TabButton>
+            <TabButton active={tab === 'online'} onClick={() => setTab('online')}>
+              En línea
+            </TabButton>
+            <TabButton active={tab === 'pending'} onClick={() => setTab('pending')}>
+              Pendientes
+              <CountBadge count={pendingCount} className="ml-1.5 px-2 py-0.5 text-xs" />
+            </TabButton>
+            <button
+              type="button"
+              onClick={() => setTab('add')}
+              className={`flex items-center justify-center rounded-md px-4 py-2 text-base font-medium transition-colors sm:ml-1.5 ${
+                tab === 'add' ? 'bg-primary-active text-white' : 'bg-status-online text-white hover:brightness-110'
+              }`}
+            >
+              Añadir amigo
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => setTab('add')}
-            className={`ml-1.5 rounded-md px-4 py-2 text-base font-medium transition-colors ${
-              tab === 'add' ? 'bg-primary-active text-white' : 'bg-status-online text-white hover:brightness-110'
+            onClick={() => setShowActiveMobile((v) => !v)}
+            className={`ml-auto flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors lg:hidden ${
+              showActiveMobile ? 'bg-surface-hover text-white' : 'text-text-description hover:bg-surface-hover/60 hover:text-white'
             }`}
           >
-            Añadir amigo
+            <span className="h-2 w-2 shrink-0 rounded-full bg-status-online" />
+            Activos ahora
+            <ChevronDownIcon className={`transition-transform ${showActiveMobile ? 'rotate-180' : ''}`} />
           </button>
         </div>
+
+        {showActiveMobile && (
+          <div className="mt-4 rounded-xl border border-surface-border/60 bg-card p-5 lg:hidden">
+            <ActiveNowList
+              onlineFriends={onlineFriends}
+              openMenuId={openSidebarMenuId}
+              onToggleMenu={openSidebarFriendMenu}
+              onCloseMenu={() => setOpenSidebarMenuId(null)}
+              onViewProfile={setViewingFriendId}
+              onSendMessage={(userId) => navigate(`/chat/${userId}`)}
+              onStartCall={(userId) => void handleStartCall(userId)}
+              onRemove={setRemovingFriendId}
+              isFriendMuted={isFriendMuted}
+              onToggleMute={(userId) => setFriendMuted(userId, !isFriendMuted(userId))}
+            />
+          </div>
+        )}
 
         {error && <p className="mt-4 text-sm text-status-dnd">{error}</p>}
 
@@ -281,52 +312,21 @@ export function FriendsPage() {
         )}
       </div>
 
-      <aside className="hidden w-80 shrink-0 px-6 py-8 lg:block">
+      <aside className="hidden shrink-0 px-6 py-8 lg:block lg:w-80">
         <p className="mb-3 text-base font-semibold text-white">Activo ahora</p>
         <div className="rounded-xl border border-surface-border/60 bg-card p-5">
-          {onlineFriends.length === 0 ? (
-            <div className="text-center">
-              <p className="text-base font-medium text-white">Por ahora está todo tranquilo...</p>
-              <p className="mt-2 text-sm leading-relaxed text-text-description">
-                Cuando un amigo esté conectado, lo vas a ver acá.
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {onlineFriends.map(({ friendshipId, user }) => (
-                <div key={friendshipId} className="flex items-center gap-3">
-                  <div className="relative shrink-0">
-                    <button type="button" onClick={() => openSidebarFriendMenu(friendshipId)} className="rounded-full transition-transform hover:scale-105">
-                      <FramedAvatar
-                        frame={user.avatarFrame}
-                        src={user.avatarUrl}
-                        alt={user.displayName}
-                        size={40}
-                        status={getEffectiveStatus(user.status, user.isOnline)}
-                      />
-                    </button>
-                    {openSidebarMenuId === friendshipId && (
-                      <FriendActionsMenu
-                        onClose={() => setOpenSidebarMenuId(null)}
-                        onViewProfile={() => setViewingFriendId(friendshipId)}
-                        onSendMessage={() => navigate(`/chat/${user.id}`)}
-                        onStartCall={() => void handleStartCall(user.id)}
-                        onRemove={() => setRemovingFriendId(friendshipId)}
-                        isMuted={isFriendMuted(user.id)}
-                        onToggleMute={() => setFriendMuted(user.id, !isFriendMuted(user.id))}
-                      />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-base text-white">{user.displayName}</p>
-                    <p className="truncate text-sm text-text-description">
-                      {STATUS_LABELS[getEffectiveStatus(user.status, user.isOnline)]}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <ActiveNowList
+            onlineFriends={onlineFriends}
+            openMenuId={openSidebarMenuId}
+            onToggleMenu={openSidebarFriendMenu}
+            onCloseMenu={() => setOpenSidebarMenuId(null)}
+            onViewProfile={setViewingFriendId}
+            onSendMessage={(userId) => navigate(`/chat/${userId}`)}
+            onStartCall={(userId) => void handleStartCall(userId)}
+            onRemove={setRemovingFriendId}
+            isFriendMuted={isFriendMuted}
+            onToggleMute={(userId) => setFriendMuted(userId, !isFriendMuted(userId))}
+          />
         </div>
       </aside>
 
@@ -380,7 +380,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center rounded-md px-4 py-2 text-base font-medium transition-colors ${
+      className={`flex items-center justify-center rounded-md px-4 py-2 text-base font-medium transition-colors sm:justify-start ${
         active ? 'bg-surface-hover text-white' : 'text-text-description hover:bg-surface-hover/60 hover:text-white'
       }`}
     >
@@ -433,6 +433,80 @@ function PersonRow({
           {children}
         </div>
       )}
+    </div>
+  );
+}
+
+function ActiveNowList({
+  onlineFriends,
+  openMenuId,
+  onToggleMenu,
+  onCloseMenu,
+  onViewProfile,
+  onSendMessage,
+  onStartCall,
+  onRemove,
+  isFriendMuted,
+  onToggleMute,
+}: {
+  onlineFriends: { friendshipId: string; user: PublicUser }[];
+  openMenuId: string | null;
+  onToggleMenu: (friendshipId: string) => void;
+  onCloseMenu: () => void;
+  onViewProfile: (friendshipId: string) => void;
+  onSendMessage: (userId: string) => void;
+  onStartCall: (userId: string) => void;
+  onRemove: (friendshipId: string) => void;
+  isFriendMuted: (userId: string) => boolean;
+  onToggleMute: (userId: string) => void;
+}) {
+  if (onlineFriends.length === 0) {
+    return (
+      <div className="text-center">
+        <p className="text-base font-medium text-white">Por ahora está todo tranquilo...</p>
+        <p className="mt-2 text-sm leading-relaxed text-text-description">Cuando un amigo esté conectado, lo vas a ver acá.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {onlineFriends.map(({ friendshipId, user }) => (
+        <div key={friendshipId} className="flex items-center gap-3">
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => onToggleMenu(friendshipId)}
+              className="rounded-full transition-transform hover:scale-105"
+            >
+              <FramedAvatar
+                frame={user.avatarFrame}
+                src={user.avatarUrl}
+                alt={user.displayName}
+                size={40}
+                status={getEffectiveStatus(user.status, user.isOnline)}
+              />
+            </button>
+            {openMenuId === friendshipId && (
+              <FriendActionsMenu
+                onClose={onCloseMenu}
+                onViewProfile={() => onViewProfile(friendshipId)}
+                onSendMessage={() => onSendMessage(user.id)}
+                onStartCall={() => onStartCall(user.id)}
+                onRemove={() => onRemove(friendshipId)}
+                isMuted={isFriendMuted(user.id)}
+                onToggleMute={() => onToggleMute(user.id)}
+              />
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-base text-white">{user.displayName}</p>
+            <p className="truncate text-sm text-text-description">
+              {STATUS_LABELS[getEffectiveStatus(user.status, user.isOnline)]}
+            </p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -825,6 +899,14 @@ function FriendsGroupIcon({ className = '' }: { className?: string }) {
       <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
       <path d="M16 5.5a3.5 3.5 0 0 1 0 7" />
       <path d="M15 13.2c2.9.4 5 2.1 5 6.8" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${className}`}>
+      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }
