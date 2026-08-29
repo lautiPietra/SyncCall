@@ -3,9 +3,11 @@ import { createApp } from './app';
 import { config } from './config/env';
 import { connectDB } from './config/db';
 import { initSocket } from './sockets';
+import { resetStaleOnlineStatus } from './features/users/users.service';
 
 async function main(): Promise<void> {
   await connectDB();
+  await resetStaleOnlineStatus();
 
   const app = createApp();
   const httpServer = createServer(app);

@@ -40,13 +40,17 @@ export async function sendFriendRequest(fromId: string, toId: string) {
   }
 
   try {
-    return await FriendRequest.create({ from: fromId, to: toId });
+    return await FriendRequest.create({ from: fromId, to: toId, pairKey: pairKeyFor(fromId, toId) });
   } catch (err) {
     if (isDuplicateKeyError(err)) {
-      throw new ApiError(409, 'Ya le enviaste una solicitud a ese usuario');
+      throw new ApiError(409, 'Ya existe una solicitud pendiente entre ustedes');
     }
     throw err;
   }
+}
+
+function pairKeyFor(userId: string, otherUserId: string): string {
+  return [userId, otherUserId].sort().join('_');
 }
 
 export async function respondFriendRequest(

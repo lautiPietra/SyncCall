@@ -77,6 +77,26 @@ describe('POST /api/conversations', () => {
     expect(listRes.status).toBe(200);
     expect(listRes.body.conversations).toHaveLength(2);
   });
+
+  it('condición de carrera: los dos amigos abriendo el chat al mismo tiempo terminan en la misma conversación', async () => {
+    const { user: userA } = await createTestUser();
+    const { user: userB } = await createTestUser();
+    await makeFriends(userA._id.toString(), userB._id.toString());
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 6 }, (_, i) =>
+        conversationsService.getOrCreateConversation(
+          i % 2 === 0 ? userA._id.toString() : userB._id.toString(),
+          i % 2 === 0 ? userB._id.toString() : userA._id.toString(),
+        ),
+      ),
+    );
+    expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+    const ids = new Set(
+      results.map((r) => (r.status === 'fulfilled' ? r.value._id.toString() : '')),
+    );
+    expect(ids.size).toBe(1);
+  });
 });
 
 describe('mensajes: envío, cifrado en la base y lectura', () => {

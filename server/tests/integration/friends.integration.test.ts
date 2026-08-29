@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app';
 import { User } from '../../src/features/users/users.model';
 import { Friendship } from '../../src/features/friends/friendship.model';
+import { FriendRequest } from '../../src/features/friends/friendRequest.model';
 import { issueJwt } from '../../src/features/auth/auth.service';
 
 const app = createApp();
@@ -263,5 +264,178 @@ describe('GET /api/friends/mutual/:userId', () => {
 
     const res = await request(app).get(`/api/friends/mutual/${stranger._id.toString()}`).set(authed(tokenA));
     expect(res.status).toBe(403);
+  });
+});
+
+describe('Privacidad: allowFriendRequests y visibleInSearch', () => {
+  it('devuelve 403 si el destinatario desactivó las solicitudes de amistad', async () => {
+    const { token } = await createTestUser();
+    const { user: other } = await createTestUser({ allowFriendRequests: false });
+
+    const res = await request(app)
+      .post('/api/friend-requests')
+      .set(authed(token))
+      .send({ to: other._id.toString() });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('un usuario invisible en la búsqueda igual puede recibir una solicitud directa por id', async () => {
+    const { token } = await createTestUser();
+    const { user: hidden } = await createTestUser({ username: 'hiddenuser', visibleInSearch: false });
+
+    const searchRes = await request(app).get('/api/users/search?q=hiddenuser').set(authed(token));
+    expect(searchRes.body.users).toHaveLength(0);
+
+    const res = await request(app)
+      .post('/api/friend-requests')
+      .set(authed(token))
+      .send({ to: hidden._id.toString() });
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('Rate limiting: POST /api/friend-requests (20/hora)', () => {
+  it('bloquea con 429 después de 20 solicitudes en la ventana', async () => {
+    const { token } = await createTestUser();
+    const targets = await Promise.all(Array.from({ length: 25 }, () => createTestUser()));
+
+    const statuses: number[] = [];
+    for (const { user: target } of targets) {
+      const res = await request(app)
+        .post('/api/friend-requests')
+        .set(authed(token))
+        .send({ to: target._id.toString() });
+      statuses.push(res.status);
+    }
+
+    expect(statuses.slice(0, 20).every((s) => s === 201)).toBe(true);
+    expect(statuses.slice(20)).toContain(429);
+  });
+});
+
+describe('Solicitudes de amistad: condiciones de carrera', () => {
+  it('reenviar la misma solicitud en simultáneo solo crea una', async () => {
+    const { token } = await createTestUser();
+    const { user: other } = await createTestUser();
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        request(app).post('/api/friend-requests').set(authed(token)).send({ to: other._id.toString() }),
+      ),
+    );
+
+    const statuses = results.map((r) => (r.status === 'fulfilled' ? r.value.status : -1));
+    expect(statuses.filter((s) => s === 201)).toHaveLength(1);
+    expect(statuses.filter((s) => s === 409)).toHaveLength(4);
+  });
+
+  it('solicitudes cruzadas simultáneas (A->B y B->A) no dejan dos pendientes a la vez', async () => {
+    const { token: tokenA, user: userA } = await createTestUser();
+    const { token: tokenB, user: userB } = await createTestUser();
+
+    const [resA, resB] = await Promise.all([
+      request(app).post('/api/friend-requests').set(authed(tokenA)).send({ to: userB._id.toString() }),
+      request(app).post('/api/friend-requests').set(authed(tokenB)).send({ to: userA._id.toString() }),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort();
+    expect(statuses).toEqual([201, 409]);
+
+    const incomingA = await request(app).get('/api/friend-requests').set(authed(tokenA));
+    const incomingB = await request(app).get('/api/friend-requests').set(authed(tokenB));
+    const totalPending =
+      incomingA.body.incoming.length +
+      incomingA.body.outgoing.length +
+      incomingB.body.incoming.length +
+      incomingB.body.outgoing.length;
+    // Cada solicitud pendiente aparece del lado de quien la mandó (outgoing) y del lado de
+    // quien la recibió (incoming): con una sola solicitud viva entre A y B, el total es 2.
+    expect(totalPending).toBe(2);
+  });
+
+  it('aceptar la misma solicitud dos veces en simultáneo no duplica la amistad ni rompe', async () => {
+    const { token: tokenA } = await createTestUser();
+    const { token: tokenB, user: userB } = await createTestUser();
+
+    const sendRes = await request(app)
+      .post('/api/friend-requests')
+      .set(authed(tokenA))
+      .send({ to: userB._id.toString() });
+    const requestId = sendRes.body.request._id ?? sendRes.body.request.id;
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 3 }, () =>
+        request(app)
+          .patch(`/api/friend-requests/${requestId}`)
+          .set(authed(tokenB))
+          .send({ status: 'accepted' }),
+      ),
+    );
+
+    for (const r of results) {
+      expect(r.status).toBe('fulfilled');
+      if (r.status === 'fulfilled') {
+        expect([200, 404]).toContain(r.value.status);
+      }
+    }
+
+    const friendsRes = await request(app).get('/api/friends').set(authed(tokenA));
+    expect(friendsRes.body.friends).toHaveLength(1);
+  });
+});
+
+describe('Capacidad: muchas amistades y solicitudes', () => {
+  it('lista correctamente cientos de amistades ya existentes', async () => {
+    const { user, token } = await createTestUser();
+    const FRIEND_COUNT = 500;
+    const others = await User.insertMany(
+      Array.from({ length: FRIEND_COUNT }, (_, i) => ({
+        username: `manyfriends${i}`,
+        displayName: `Friend ${i}`,
+        avatarUrl: 'https://example.com/a.png',
+        accentColor: '#5B6DFF',
+        googleId: `manyfriends-g-${i}`,
+      })),
+    );
+    await Friendship.insertMany(
+      others.map((o) => {
+        const [userA, userB] = [user._id.toString(), o._id.toString()].sort();
+        return { userA, userB };
+      }),
+    );
+
+    const start = Date.now();
+    const res = await request(app).get('/api/friends').set(authed(token));
+    const elapsedMs = Date.now() - start;
+
+    expect(res.status).toBe(200);
+    expect(res.body.friends).toHaveLength(FRIEND_COUNT);
+    expect(elapsedMs).toBeLessThan(5000);
+  });
+
+  it('lista correctamente cientos de solicitudes entrantes pendientes', async () => {
+    const { user, token } = await createTestUser();
+    const REQUEST_COUNT = 300;
+    const senders = await User.insertMany(
+      Array.from({ length: REQUEST_COUNT }, (_, i) => ({
+        username: `sender${i}`,
+        displayName: `Sender ${i}`,
+        avatarUrl: 'https://example.com/a.png',
+        accentColor: '#5B6DFF',
+        googleId: `sender-g-${i}`,
+      })),
+    );
+    await FriendRequest.insertMany(
+      senders.map((s) => ({
+        from: s._id,
+        to: user._id,
+        pairKey: [s._id.toString(), user._id.toString()].sort().join('_'),
+      })),
+    );
+
+    const res = await request(app).get('/api/friend-requests').set(authed(token));
+    expect(res.status).toBe(200);
+    expect(res.body.incoming).toHaveLength(REQUEST_COUNT);
   });
 });

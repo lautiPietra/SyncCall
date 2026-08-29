@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Types } from 'mongoose';
 import { User } from '../../src/features/users/users.model';
 import { Friendship } from '../../src/features/friends/friendship.model';
 import { Channel, Group } from '../../src/features/groups/groups.model';
@@ -310,5 +311,116 @@ describe('rol de administrador', () => {
     await expect(groupsService.deleteGroup(group._id.toString(), admin._id.toString())).rejects.toThrow(
       'Solo el dueño del grupo puede hacer esto',
     );
+  });
+});
+
+describe('capacidad: límite de 50 miembros', () => {
+  async function makeGroupWithMemberCount(count: number) {
+    const owner = await createTestUser();
+    const members: { user: unknown; role: string }[] = [{ user: owner._id, role: 'owner' }];
+    for (let i = 0; i < count - 1; i++) {
+      const u = await createTestUser({ username: `capmember${i}` });
+      members.push({ user: u._id, role: 'member' });
+    }
+    const group = await Group.create({ name: 'Capacidad', owner: owner._id, members });
+    return { owner, group };
+  }
+
+  it('rechaza invitar una vez que el grupo (miembros + pendientes) llega a 50', async () => {
+    const { owner, group } = await makeGroupWithMemberCount(50);
+    const friend = await createTestUser();
+    await makeFriends(owner._id.toString(), friend._id.toString());
+
+    await expect(groupsService.inviteMember(group._id.toString(), owner._id.toString(), friend._id.toString())).rejects.toThrow(
+      `Los grupos tienen un máximo de 50 miembros`,
+    );
+  });
+
+  it('rechaza aceptar una invitación si el grupo se llenó mientras estaba pendiente', async () => {
+    const { owner, group } = await makeGroupWithMemberCount(49);
+    const friend = await createTestUser();
+    await makeFriends(owner._id.toString(), friend._id.toString());
+    await groupsService.inviteMember(group._id.toString(), owner._id.toString(), friend._id.toString());
+
+    // El grupo se llena por otra vía (ya no hay lugar) antes de que el invitado responda.
+    await Group.updateOne({ _id: group._id }, { $push: { members: { user: new Types.ObjectId(), role: 'member' } } });
+
+    const invite = await GroupInvite.findOne({ group: group._id, invitedUser: friend._id });
+    await expect(groupsService.respondGroupInvite(invite!._id.toString(), friend._id.toString(), 'accepted')).rejects.toThrow(
+      'El grupo ya está lleno',
+    );
+  });
+
+  it('condición de carrera: varias aceptaciones simultáneas en un grupo casi lleno nunca superan el cupo', async () => {
+    const { owner, group } = await makeGroupWithMemberCount(49);
+    // Se crean las invitaciones directo (no vía inviteMember): en la vida real pudieron haberse
+    // mandado en momentos distintos, cuando todavía había lugar de sobra; lo que se quiere
+    // probar acá es qué pasa si más de una se ACEPTA a la vez ya con el grupo casi lleno.
+    const invitees = await Promise.all(Array.from({ length: 8 }, (_, i) => createTestUser({ username: `raceinv${i}` })));
+    await GroupInvite.insertMany(
+      invitees.map((inv) => ({ group: group._id, invitedUser: inv._id, invitedBy: owner._id })),
+    );
+    const invites = await GroupInvite.find({ group: group._id });
+
+    const results = await Promise.allSettled(
+      invites.map((inv) => groupsService.respondGroupInvite(inv._id.toString(), inv.invitedUser.toString(), 'accepted')),
+    );
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled').length;
+    expect(fulfilled).toBe(1);
+    const refreshed = await Group.findById(group._id).lean();
+    expect(refreshed?.members).toHaveLength(50);
+  });
+
+  it('condición de carrera: invitar a la misma persona dos veces a la vez no revienta con un 500', async () => {
+    const owner = await createTestUser();
+    const friend = await createTestUser();
+    await makeFriends(owner._id.toString(), friend._id.toString());
+    const { group } = await groupsService.createGroup(owner._id.toString(), 'Grupo', []);
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () => groupsService.inviteMember(group._id.toString(), owner._id.toString(), friend._id.toString())),
+    );
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected.every((r) => r.reason.message === 'Ya tiene una invitación pendiente a este grupo')).toBe(true);
+  });
+
+  it('condición de carrera: sacar a varios miembros distintos a la vez no pierde ninguna baja', async () => {
+    const { owner, group } = await makeGroupWithMemberCount(7);
+    const before = await Group.findById(group._id).lean();
+    const targets = before!.members.filter((m) => m.user.toString() !== owner._id.toString()).slice(0, 4);
+
+    const results = await Promise.allSettled(
+      targets.map((m) => groupsService.removeMember(group._id.toString(), owner._id.toString(), m.user.toString())),
+    );
+    expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+
+    const after = await Group.findById(group._id).lean();
+    expect(after?.members).toHaveLength(3);
+    for (const t of targets) {
+      expect(after?.members.some((m) => m.user.toString() === t.user.toString())).toBe(false);
+    }
+  });
+});
+
+describe('capacidad: grupo con muchos miembros y detalle', () => {
+  it('lista el detalle de un grupo con 50 miembros correctamente y rápido', async () => {
+    const owner = await createTestUser();
+    const members: { user: unknown; role: string }[] = [{ user: owner._id, role: 'owner' }];
+    for (let i = 0; i < 49; i++) {
+      const u = await createTestUser({ username: `bigmember${i}` });
+      members.push({ user: u._id, role: 'member' });
+    }
+    const group = await Group.create({ name: 'Grupo grande', owner: owner._id, members });
+    await Channel.create({ group: group._id, name: 'general', type: 'text' });
+
+    const start = Date.now();
+    const detail = await groupsService.getGroupDetail(group._id.toString(), owner._id.toString());
+    const elapsedMs = Date.now() - start;
+
+    expect(detail.members).toHaveLength(50);
+    expect(elapsedMs).toBeLessThan(5000);
   });
 });

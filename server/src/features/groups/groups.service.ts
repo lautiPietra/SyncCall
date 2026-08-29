@@ -227,7 +227,21 @@ export async function inviteMember(groupId: string, ownerId: string, newUserId: 
     throw new ApiError(400, `Los grupos tienen un máximo de ${MAX_MEMBERS} miembros`);
   }
 
-  return GroupInvite.create({ group: groupId, invitedUser: newUserId, invitedBy: ownerId });
+  try {
+    return await GroupInvite.create({ group: groupId, invitedUser: newUserId, invitedBy: ownerId });
+  } catch (err) {
+    // Dos admins invitando a la misma persona casi al mismo tiempo pasan el chequeo de arriba
+    // antes de que cualquiera termine de crear la invitación; el índice único {group,invitedUser}
+    // frena al segundo, y acá se lo convierte en el mismo 409 prolijo en vez de un 500 crudo.
+    if (isDuplicateKeyError(err)) {
+      throw new ApiError(409, 'Ya tiene una invitación pendiente a este grupo');
+    }
+    throw err;
+  }
+}
+
+function isDuplicateKeyError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
 }
 
 export async function respondGroupInvite(
@@ -253,25 +267,45 @@ export async function respondGroupInvite(
     return { status: 'declined', groupId, ownerId };
   }
 
-  if (group.members.length + 1 > MAX_MEMBERS) {
-    throw new ApiError(400, 'El grupo ya está lleno');
-  }
-
+  // $push condicionado por $expr en vez de "leer length, empujar en memoria, save()": esa
+  // secuencia lee el tamaño del array en un momento y confía en que siga siendo así al guardar,
+  // así que varias aceptaciones a la vez (grupo casi lleno, varios invitados aceptando juntos)
+  // podían pasar todas el chequeo con el mismo snapshot y terminar en un grupo con más miembros
+  // que MAX_MEMBERS. Acá el chequeo de cupo y el push son una sola operación atómica en Mongo.
+  const userObjectId = new Types.ObjectId(userId);
   const joinedAt = new Date();
-  group.members.push({ user: new Types.ObjectId(userId), role: 'member', joinedAt });
-  await group.save();
+  let updatedGroup = await Group.findOneAndUpdate(
+    {
+      _id: group._id,
+      $expr: { $lt: [{ $size: '$members' }, MAX_MEMBERS] },
+      'members.user': { $ne: userObjectId },
+    },
+    { $push: { members: { user: userObjectId, role: 'member', joinedAt } } },
+    { new: true },
+  );
+
+  if (!updatedGroup) {
+    // O ya está lleno, o esta misma invitación se aceptó dos veces en simultáneo (doble click):
+    // en ese segundo caso no es un error real, ya se unió, se responde igual que un éxito.
+    const alreadyMember = await Group.findOne({ _id: group._id, 'members.user': userObjectId });
+    if (!alreadyMember) {
+      throw new ApiError(400, 'El grupo ya está lleno');
+    }
+    updatedGroup = alreadyMember;
+  }
   await invite.deleteOne();
 
   const userDoc = await User.findById(userId).select(PUBLIC_USER_FIELDS).lean<LeanPublicUser>();
   if (!userDoc) {
     throw new ApiError(404, 'Usuario no encontrado');
   }
+  const member = updatedGroup.members.find((m) => m.user.toString() === userId);
 
   return {
     status: 'accepted',
     groupId,
     ownerId,
-    member: { user: toPublicUser(userDoc), role: 'member', joinedAt: joinedAt.toISOString() },
+    member: { user: toPublicUser(userDoc), role: 'member', joinedAt: (member?.joinedAt ?? joinedAt).toISOString() },
   };
 }
 
@@ -369,11 +403,21 @@ export async function removeMember(groupId: string, actorId: string, targetUserI
     throw new ApiError(403, 'Solo el dueño puede sacar a un administrador');
   }
 
-  group.members.splice(index, 1);
-  await group.save();
+  // $pull en vez de splice()+save(): splice() marca el array entero como modificado, así que
+  // save() lo pisa completo con el snapshot en memoria. Sacar a dos miembros distintos al mismo
+  // tiempo (dos admins actuando a la vez, o esta acción y un "abandonar grupo" cruzándose) podía
+  // perder una de las dos bajas, o directamente explotar con un VersionError de Mongoose.
+  const updated = await Group.findOneAndUpdate(
+    { _id: groupId },
+    { $pull: { members: { user: new Types.ObjectId(targetUserId) } } },
+    { new: true },
+  );
+  if (!updated) {
+    throw new ApiError(404, 'Grupo no encontrado');
+  }
   await GroupChannelRead.deleteMany({ group: groupId, user: targetUserId });
 
-  return group;
+  return updated;
 }
 
 /** Solo el dueño puede ascender/descender administradores. */
@@ -397,8 +441,18 @@ export async function setMemberRole(
   if (!member) {
     throw new ApiError(404, 'Ese usuario no es miembro del grupo');
   }
-  member.role = role;
-  await group.save();
+
+  // $set posicional en vez de mutar el subdocumento y hacer save() del array completo: así el
+  // cambio de rol de esta persona no puede pisar (ni ser pisado por) una baja/alta concurrente
+  // de otro miembro distinto en el mismo grupo.
+  const updated = await Group.findOneAndUpdate(
+    { _id: groupId, 'members.user': targetUserId },
+    { $set: { 'members.$.role': role } },
+    { new: true },
+  );
+  if (!updated) {
+    throw new ApiError(404, 'Ese usuario no es miembro del grupo');
+  }
 
   const userDoc = await User.findById(targetUserId).select(PUBLIC_USER_FIELDS).lean<LeanPublicUser>();
   if (!userDoc) {
@@ -419,12 +473,19 @@ export async function leaveGroup(groupId: string, userId: string): Promise<Group
     throw new ApiError(400, 'El dueño no puede abandonar el grupo, tenés que eliminarlo');
   }
 
-  const index = group.members.findIndex((m) => m.user.toString() === userId);
-  group.members.splice(index, 1);
-  await group.save();
+  // Mismo motivo que en removeMember: $pull atómico en vez de splice()+save(), para que
+  // abandonar el grupo no pise (ni sea pisado por) otro cambio concurrente en members.
+  const updated = await Group.findOneAndUpdate(
+    { _id: groupId },
+    { $pull: { members: { user: new Types.ObjectId(userId) } } },
+    { new: true },
+  );
+  if (!updated) {
+    throw new ApiError(404, 'Grupo no encontrado');
+  }
   await GroupChannelRead.deleteMany({ group: groupId, user: userId });
 
-  return group;
+  return updated;
 }
 
 export async function createChannel(groupId: string, ownerId: string, name: string, type: ChannelType): Promise<ChannelDocument> {

@@ -4,6 +4,7 @@ import type { FriendRequestStatus } from '@synccall/shared';
 export interface FriendRequestDocument extends Document<Types.ObjectId> {
   from: Types.ObjectId;
   to: Types.ObjectId;
+  pairKey: string;
   status: FriendRequestStatus;
   createdAt: Date;
 }

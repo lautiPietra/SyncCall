@@ -342,17 +342,41 @@ export async function reactToMessage(
     throw new ApiError(403, 'Ya no son amigos, no podés reaccionar a sus mensajes');
   }
 
-  const existingIndex = doc.reactions.findIndex((r) => r.user.toString() === userId);
-  const alreadyHasThisEmoji = existingIndex >= 0 && doc.reactions[existingIndex].emoji === emoji;
-  if (existingIndex >= 0) {
-    doc.reactions.splice(existingIndex, 1);
+  // $pull + $push atómicos en vez de mutar el array en memoria y doc.save(): esa secuencia
+  // versiona el documento entero, así que si el otro participante reacciona o saca su reacción
+  // casi al mismo tiempo, una de las dos operaciones podía perderse (o explotar con un
+  // VersionError de Mongoose sin que el cliente se entere, porque el error no es un ApiError).
+  // findOneAndUpdate con new:false devuelve el estado justo antes del $pull, de forma atómica,
+  // así que decidir si esto era un toggle-off no depende de una lectura previa separada.
+  const userObjectId = new MongooseTypes.ObjectId(userId);
+  const beforePull = await MessageModel.findOneAndUpdate(
+    { _id: messageId },
+    { $pull: { reactions: { user: userObjectId } } },
+    { new: false },
+  );
+  if (!beforePull) {
+    throw new ApiError(404, 'Mensaje no encontrado');
   }
-  if (!alreadyHasThisEmoji) {
-    doc.reactions.push({ emoji, user: new MongooseTypes.ObjectId(userId) });
-  }
-  await doc.save();
+  const previousReaction = beforePull.reactions.find((r) => r.user.toString() === userId);
+  const alreadyHadThisEmoji = previousReaction?.emoji === emoji;
 
-  return { message: decryptMessage(doc), conversationId: doc.conversation.toString() };
+  // beforePull refleja el estado ANTES del $pull (todavía con la reacción vieja puesta): sirve
+  // para decidir alreadyHadThisEmoji, pero no para devolver como resultado en ningún caso.
+  let updated: MessageDocument | null;
+  if (alreadyHadThisEmoji) {
+    updated = await MessageModel.findById(messageId);
+  } else {
+    updated = await MessageModel.findOneAndUpdate(
+      { _id: messageId },
+      { $push: { reactions: { emoji, user: userObjectId } } },
+      { new: true },
+    );
+  }
+  if (!updated) {
+    throw new ApiError(404, 'Mensaje no encontrado');
+  }
+
+  return { message: decryptMessage(updated), conversationId: doc.conversation.toString() };
 }
 
 /** Sacar tu propia reacción no requiere seguir siendo amigos (es una limpieza, no una escritura nueva), pero sí que sigas siendo parte de la conversación. */
@@ -368,11 +392,15 @@ export async function removeReaction(messageId: string, userId: string): Promise
   }
   assertParticipant(conversation, userId);
 
-  const existingIndex = doc.reactions.findIndex((r) => r.user.toString() === userId);
-  if (existingIndex >= 0) {
-    doc.reactions.splice(existingIndex, 1);
-    await doc.save();
+  // $pull atómico (ver el comentario en reactToMessage sobre por qué no doc.save()).
+  const updated = await MessageModel.findOneAndUpdate(
+    { _id: messageId },
+    { $pull: { reactions: { user: new MongooseTypes.ObjectId(userId) } } },
+    { new: true },
+  );
+  if (!updated) {
+    throw new ApiError(404, 'Mensaje no encontrado');
   }
 
-  return { message: decryptMessage(doc), conversationId: doc.conversation.toString() };
+  return { message: decryptMessage(updated), conversationId: doc.conversation.toString() };
 }

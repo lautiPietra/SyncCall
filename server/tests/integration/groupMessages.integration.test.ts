@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { User } from '../../src/features/users/users.model';
 import { Friendship } from '../../src/features/friends/friendship.model';
 import { GroupInvite } from '../../src/features/groups/groupInvites.model';
+import { GroupMessage } from '../../src/features/groups/groupMessages.model';
 import * as groupsService from '../../src/features/groups/groups.service';
 import * as groupMessagesService from '../../src/features/groups/groupMessages.service';
+import { encryptText } from '../../src/lib/crypto';
 
 async function createTestUser(overrides: Record<string, unknown> = {}) {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 10000)}`;
@@ -204,5 +206,73 @@ describe('contador de no leídos', () => {
 
     const summariesAfter = await groupsService.listMyGroups(owner._id.toString());
     expect(summariesAfter.find((g) => g.id === group._id.toString())?.unreadCount).toBe(1);
+  });
+
+  it('condición de carrera: varios miembros mandando mensajes a la vez suman bien los no leídos de un tercero que no escribe', async () => {
+    const owner = await createTestUser();
+    const bystander = await createTestUser();
+    const senders = await Promise.all(Array.from({ length: 10 }, () => createTestUser()));
+    await makeFriends(owner._id.toString(), bystander._id.toString());
+    for (const s of senders) {
+      await makeFriends(owner._id.toString(), s._id.toString());
+    }
+    const { group, defaultChannel } = await groupsService.createGroup(
+      owner._id.toString(),
+      'Grupo concurrido',
+      [bystander._id.toString(), ...senders.map((s) => s._id.toString())],
+    );
+    for (const u of [bystander, ...senders]) {
+      const invite = await GroupInvite.findOne({ group: group._id, invitedUser: u._id });
+      await groupsService.respondGroupInvite(invite!._id.toString(), u._id.toString(), 'accepted');
+    }
+
+    await Promise.all(
+      senders.map((s) => groupMessagesService.sendGroupMessage(defaultChannel._id.toString(), s._id.toString(), { content: 'hola' })),
+    );
+
+    const { channelUnreadCounts } = await groupsService.getGroupDetail(group._id.toString(), bystander._id.toString());
+    expect(channelUnreadCounts.get(defaultChannel._id.toString())).toBe(senders.length);
+  });
+});
+
+describe('capacidad: historial largo de un canal', () => {
+  it('pagina correctamente miles de mensajes de un canal sin degradarse', async () => {
+    const { member, defaultChannel } = await setup();
+
+    const TOTAL = 1200;
+    const now = Date.now();
+    await GroupMessage.insertMany(
+      Array.from({ length: TOTAL }, (_, i) => {
+        const { ciphertext, iv, authTag } = encryptText(`mensaje ${i}`);
+        return {
+          channel: defaultChannel._id,
+          group: defaultChannel.group,
+          sender: member._id,
+          type: 'text',
+          ciphertext,
+          iv,
+          authTag,
+          createdAt: new Date(now + i),
+        };
+      }),
+    );
+
+    let cursor: string | undefined;
+    let totalFetched = 0;
+    let pages = 0;
+    const start = Date.now();
+    do {
+      const page = await groupMessagesService.getGroupMessages(defaultChannel._id.toString(), member._id.toString(), {
+        limit: 100,
+        before: cursor,
+      });
+      totalFetched += page.messages.length;
+      cursor = page.nextCursor ?? undefined;
+      pages++;
+    } while (cursor && pages < 20);
+    const elapsedMs = Date.now() - start;
+
+    expect(totalFetched).toBe(TOTAL);
+    expect(elapsedMs).toBeLessThan(10000);
   });
 });

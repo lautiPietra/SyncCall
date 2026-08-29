@@ -19,7 +19,18 @@ interface OAuthProfile {
   avatarUrl: string;
 }
 
-export async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<UserDocument> {
+/**
+ * Al arrancar el servidor todavía no hay ningún socket conectado (el registro de presencia en
+ * memoria arranca vacío), así que nadie puede estar realmente "en línea" todavía. Si el proceso
+ * anterior se cayó o se reinició sin que los sockets llegaran a emitir 'disconnect' (crash, redeploy,
+ * tsx watch), la DB se queda con isOnline:true para siempre en esas cuentas. Se corrige acá para que
+ * cada usuario vuelva a quedar en línea recién cuando su socket se reconecte de verdad.
+ */
+export async function resetStaleOnlineStatus(): Promise<void> {
+  await User.updateMany({ isOnline: true }, { $set: { isOnline: false } });
+}
+
+export async function findOrCreateOAuthUser(profile: OAuthProfile, attempt = 0): Promise<UserDocument> {
   const providerField = profile.provider === 'google' ? 'googleId' : 'githubId';
 
   const existing = await User.findOne({ [providerField]: profile.providerId });
@@ -29,13 +40,37 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User
 
   const username = await generateUniqueUsername(profile.displayName);
 
-  return User.create({
-    [providerField]: profile.providerId,
-    username,
-    displayName: profile.displayName,
-    avatarUrl: profile.avatarUrl || defaultAvatarUrl(profile.displayName),
-    accentColor: ACCENT_COLORS[Math.floor(Math.random() * ACCENT_COLORS.length)],
-  });
+  try {
+    return await User.create({
+      [providerField]: profile.providerId,
+      username,
+      displayName: profile.displayName,
+      avatarUrl: profile.avatarUrl || defaultAvatarUrl(profile.displayName),
+      accentColor: ACCENT_COLORS[Math.floor(Math.random() * ACCENT_COLORS.length)],
+    });
+  } catch (err) {
+    if (!isDuplicateKeyError(err)) {
+      throw err;
+    }
+    // Dos requests simultáneas para la misma cuenta nueva (doble click en "Iniciar sesión", dos
+    // pestañas, reintento de red del callback OAuth) pasan el findOne de arriba antes de que
+    // cualquiera termine de crear el usuario, y pueden chocar tanto en el índice de providerId
+    // como en el de username (mismo displayName generando el mismo candidato). Si la cuenta ya
+    // quedó creada por la otra request, se devuelve esa; si el choque fue solo de username (dos
+    // cuentas nuevas distintas con el mismo nombre), se reintenta con un username recién generado.
+    const winner = await User.findOne({ [providerField]: profile.providerId });
+    if (winner) {
+      return winner;
+    }
+    if (attempt >= 3) {
+      throw err;
+    }
+    return findOrCreateOAuthUser(profile, attempt + 1);
+  }
+}
+
+function isDuplicateKeyError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
 }
 
 function defaultAvatarUrl(name: string): string {

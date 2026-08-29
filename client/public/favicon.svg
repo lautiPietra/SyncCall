@@ -1,0 +1,31 @@
+<svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="synccall-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5B6DFF" />
+      <stop offset="100%" stop-color="#7A5AF8" />
+    </linearGradient>
+  </defs>
+
+  <path d="M150 46 L182 8 L196 54 Z" fill="url(#synccall-gradient)" />
+  <rect x="30" y="26" width="180" height="180" rx="72" fill="url(#synccall-gradient)" />
+  <rect x="52" y="48" width="136" height="124" rx="56" fill="#0B0F1D" />
+
+  <rect x="86" y="76" width="16" height="36" rx="8" fill="white" />
+  <rect x="138" y="76" width="16" height="36" rx="8" fill="white" />
+
+  <path
+    d="M100 124 Q120 138 140 124"
+    stroke="white"
+    stroke-width="7"
+    stroke-linecap="round"
+    fill="none"
+  />
+
+  <path
+    d="M126 150 L102 190 L116 190 L98 230 L140 180 L120 180 Z"
+    fill="#8B9CFF"
+    stroke="#0B0F1D"
+    stroke-width="4"
+    stroke-linejoin="round"
+  />
+</svg>

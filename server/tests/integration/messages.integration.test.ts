@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { messageContentSchema } from '@synccall/shared';
 import { User } from '../../src/features/users/users.model';
 import { Friendship } from '../../src/features/friends/friendship.model';
 import { Message } from '../../src/features/messages/messages.model';
 import * as messagesService from '../../src/features/messages/messages.service';
 import * as conversationsService from '../../src/features/conversations/conversations.service';
+import { consumeMessageToken } from '../../src/sockets/messageRateLimiter';
+import { encryptText } from '../../src/lib/crypto';
 
 async function createTestUser(overrides: Record<string, unknown> = {}) {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 10000)}`;
@@ -233,5 +236,88 @@ describe('reactToMessage', () => {
     await expect(messagesService.reactToMessage(message.id, userB._id.toString(), '❤️')).rejects.toThrow(
       'No podés reaccionar a un mensaje eliminado',
     );
+  });
+
+  it('condición de carrera: uno cambia su reacción mientras el otro saca la suya, sin perderse ninguna', async () => {
+    const userA = await createTestUser();
+    const userB = await createTestUser();
+    await makeFriends(userA._id.toString(), userB._id.toString());
+    const conversation = await conversationsService.getOrCreateConversation(userA._id.toString(), userB._id.toString());
+    const { message } = await messagesService.sendMessage(conversation.id, userA._id.toString(), { content: 'hola' });
+    await messagesService.reactToMessage(message.id, userA._id.toString(), '👍');
+    await messagesService.reactToMessage(message.id, userB._id.toString(), '❤️');
+
+    const results = await Promise.allSettled([
+      messagesService.reactToMessage(message.id, userA._id.toString(), '😂'),
+      messagesService.removeReaction(message.id, userB._id.toString()),
+    ]);
+    expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+
+    const final = await Message.findById(message.id).lean();
+    expect(final!.reactions).toHaveLength(1);
+    expect(final!.reactions[0].emoji).toBe('😂');
+    expect(final!.reactions[0].user.toString()).toBe(userA._id.toString());
+  });
+});
+
+describe('límite de longitud de un mensaje (2000 caracteres)', () => {
+  it('rechaza contenido vacío y contenido de más de 2000 caracteres', () => {
+    expect(messageContentSchema.safeParse('').success).toBe(false);
+    expect(messageContentSchema.safeParse('a'.repeat(2000)).success).toBe(true);
+    expect(messageContentSchema.safeParse('a'.repeat(2001)).success).toBe(false);
+  });
+});
+
+describe('límite de mensajes por segundo (token bucket de sockets)', () => {
+  it('permite una ráfaga de 5 y bloquea el 6to hasta que se recargue', async () => {
+    const userId = `bucket-test-${Date.now()}`;
+    const allowed = Array.from({ length: 6 }, () => consumeMessageToken(userId));
+    expect(allowed.slice(0, 5)).toEqual([true, true, true, true, true]);
+    expect(allowed[5]).toBe(false);
+
+    // Se recarga 1 token cada 300ms: después de esperar eso, debería volver a dejar pasar uno.
+    await new Promise((resolve) => setTimeout(resolve, 320));
+    expect(consumeMessageToken(userId)).toBe(true);
+  });
+});
+
+describe('capacidad: historial largo de una conversación', () => {
+  it('pagina correctamente miles de mensajes sin degradarse', async () => {
+    const userA = await createTestUser();
+    const userB = await createTestUser();
+    await makeFriends(userA._id.toString(), userB._id.toString());
+    const conversation = await conversationsService.getOrCreateConversation(userA._id.toString(), userB._id.toString());
+
+    const TOTAL = 1200;
+    const now = Date.now();
+    await Message.insertMany(
+      Array.from({ length: TOTAL }, (_, i) => {
+        const { ciphertext, iv, authTag } = encryptText(`mensaje ${i}`);
+        return {
+          conversation: conversation._id,
+          sender: i % 2 === 0 ? userA._id : userB._id,
+          type: 'text',
+          ciphertext,
+          iv,
+          authTag,
+          createdAt: new Date(now + i),
+        };
+      }),
+    );
+
+    let cursor: string | undefined;
+    let totalFetched = 0;
+    let pages = 0;
+    const start = Date.now();
+    do {
+      const page = await messagesService.getMessages(conversation.id, userA._id.toString(), { limit: 100, before: cursor });
+      totalFetched += page.messages.length;
+      cursor = page.nextCursor ?? undefined;
+      pages++;
+    } while (cursor && pages < 20);
+    const elapsedMs = Date.now() - start;
+
+    expect(totalFetched).toBe(TOTAL);
+    expect(elapsedMs).toBeLessThan(10000);
   });
 });
