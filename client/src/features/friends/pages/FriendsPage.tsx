@@ -114,16 +114,16 @@ export function FriendsPage() {
                 Pendientes
                 <CountBadge count={pendingCount} className="ml-1.5 px-2 py-0.5 text-xs" />
               </TabButton>
+              <button
+                type="button"
+                onClick={() => setTab('add')}
+                className={`shrink-0 whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-colors sm:ml-1 sm:text-base ${
+                  tab === 'add' ? 'bg-primary-active text-white' : 'bg-status-online text-white hover:brightness-110'
+                }`}
+              >
+                Añadir amigo
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setTab('add')}
-              className={`shrink-0 rounded-md px-4 py-2 text-sm font-medium transition-colors sm:text-base ${
-                tab === 'add' ? 'bg-primary-active text-white' : 'bg-status-online text-white hover:brightness-110'
-              }`}
-            >
-              Añadir amigo
-            </button>
           </div>
           <button
             type="button"
