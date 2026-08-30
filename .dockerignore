@@ -4,6 +4,6 @@
 **/coverage
 **/*.tsbuildinfo
 .git
-.env
-.env.*.local
+**/.env
+**/.env.*.local
 **/tests
