@@ -22,13 +22,24 @@ interface FramedAvatarProps {
   status?: UserStatus;
 }
 
+/** El marco decorativo ocupa espacio alrededor de la foto, pero el "slot" total (outer) tiene
+ * que quedar igual a `size` sin importar el marco — si no, un mensaje de alguien con marco
+ * "orbit" ocupa más lugar en la fila que uno sin marco, y todo se ve desparejo. Por eso la
+ * foto interna se achica lo justo para dejarle lugar al marco, con un piso del 70% de `size`
+ * para que nunca quede minúscula en los usos con avatares chicos (28px en mensajes, etc.).*/
+function innerAvatarSize(size: number, framePadding: number): number {
+  return Math.max(Math.round(size - framePadding), Math.round(size * 0.7));
+}
+
 export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvatarProps) {
   if (frame === 'none') {
     return <Avatar src={src} alt={alt} size={size} status={status} />;
   }
 
+  const outer = size;
+
   if (frame === 'orbit') {
-    const outer = size + 22;
+    const inner = innerAvatarSize(size, 22);
     return (
       <div className="relative flex items-center justify-center" style={{ width: outer, height: outer }}>
         <svg
@@ -54,13 +65,13 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
             strokeLinecap="round"
           />
         </svg>
-        <Avatar src={src} alt={alt} size={size} status={status} />
+        <Avatar src={src} alt={alt} size={inner} status={status} />
       </div>
     );
   }
 
   if (frame === 'ice') {
-    const outer = size + 14;
+    const inner = innerAvatarSize(size, 14);
     const sparkles = [
       { top: '2%', left: '18%', delay: '0ms' },
       { top: '14%', right: '0%', delay: '450ms' },
@@ -70,8 +81,8 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
       <div className="relative" style={{ width: outer, height: outer }}>
         <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#E0FBFF] via-[#8FE0F5] to-[#3FA9D6]" />
         <div className="absolute inset-[3px] rounded-full bg-card" />
-        <div className="absolute inset-[6px]">
-          <Avatar src={src} alt={alt} size={size} status={status} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Avatar src={src} alt={alt} size={inner} status={status} />
         </div>
         {sparkles.map((pos, i) => (
           <span
@@ -85,14 +96,14 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
   }
 
   if (frame === 'gold') {
-    const outer = size + 14;
+    const inner = innerAvatarSize(size, 14);
     return (
       <div className="relative" style={{ width: outer, height: outer }}>
         <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#FDE68A] via-[#F5B942] to-[#9A6B0C]" />
         <div className="absolute inset-[2.5px] rounded-full bg-gradient-to-tl from-[#B8860B] via-transparent to-[#FFF3C4] opacity-70" />
         <div className="absolute inset-[4.5px] rounded-full bg-card" />
-        <div className="absolute inset-[7.5px]">
-          <Avatar src={src} alt={alt} size={size} status={status} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Avatar src={src} alt={alt} size={inner} status={status} />
         </div>
         <span
           className="absolute left-1/2 top-[-3px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-gradient-to-br from-[#FDE68A] to-[#B8860B] shadow-[0_0_4px_rgba(253,230,138,0.8)]"
@@ -103,28 +114,28 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
   }
 
   if (frame === 'neon') {
-    const outer = size + 14;
+    const inner = innerAvatarSize(size, 14);
     return (
       <div className="relative" style={{ width: outer, height: outer }}>
         <div className="animate-glow-pulse absolute inset-[-6px] rounded-full bg-primary/60 blur-md" />
         <div className="absolute inset-0 animate-pulse rounded-full bg-primary shadow-[0_0_14px_3px_rgba(91,109,255,0.65)]" />
         <div className="absolute inset-[3px] rounded-full bg-card" />
-        <div className="absolute inset-[6px]">
-          <Avatar src={src} alt={alt} size={size} status={status} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Avatar src={src} alt={alt} size={inner} status={status} />
         </div>
       </div>
     );
   }
 
   if (frame === 'flame') {
-    const outer = size + 14;
+    const inner = innerAvatarSize(size, 14);
     return (
       <div className="relative" style={{ width: outer, height: outer }}>
         <div className="animate-glow-pulse absolute inset-[-6px] rounded-full bg-orange-500/50 blur-md" />
         <div className="animate-flicker absolute inset-0 rounded-full bg-gradient-to-br from-[#FFD37A] via-[#FF7A45] to-[#C2261B]" />
         <div className="absolute inset-[3px] rounded-full bg-card" />
-        <div className="absolute inset-[6px]">
-          <Avatar src={src} alt={alt} size={size} status={status} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Avatar src={src} alt={alt} size={inner} status={status} />
         </div>
         <span
           className="absolute bottom-[-4px] left-1/2 h-3 w-2.5 -translate-x-1/2 rounded-b-full rounded-t-sm bg-gradient-to-b from-[#FFD37A] to-[#C2261B]"
@@ -135,7 +146,7 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
   }
 
   if (frame === 'cosmic') {
-    const outer = size + 14;
+    const inner = innerAvatarSize(size, 14);
     const stars = [
       { top: '4%', left: '10%', delay: '0ms', size: 5 },
       { top: '18%', right: '2%', delay: '350ms', size: 4 },
@@ -146,8 +157,8 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
       <div className="relative" style={{ width: outer, height: outer }}>
         <div className="animate-spin-slower absolute inset-0 rounded-full bg-gradient-to-br from-[#2A1B5E] via-[#5B2FCC] to-[#0B0F1D]" />
         <div className="absolute inset-[3px] rounded-full bg-card" />
-        <div className="absolute inset-[6px]">
-          <Avatar src={src} alt={alt} size={size} status={status} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Avatar src={src} alt={alt} size={inner} status={status} />
         </div>
         {stars.map((pos, i) => (
           <span
@@ -161,14 +172,14 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
   }
 
   if (frame === 'emerald') {
-    const outer = size + 14;
+    const inner = innerAvatarSize(size, 14);
     return (
       <div className="relative" style={{ width: outer, height: outer }}>
         <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#6EE7B7] via-[#10B981] to-[#065F46]" />
         <div className="absolute inset-[2.5px] rounded-full bg-gradient-to-tl from-[#065F46] via-transparent to-[#D1FAE5] opacity-70" />
         <div className="absolute inset-[4.5px] rounded-full bg-card" />
-        <div className="absolute inset-[7.5px]">
-          <Avatar src={src} alt={alt} size={size} status={status} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Avatar src={src} alt={alt} size={inner} status={status} />
         </div>
         <span
           className="absolute left-1/2 top-[-3px] h-3 w-2.5 -translate-x-1/2 rounded-b-full rounded-t-sm bg-gradient-to-br from-[#6EE7B7] to-[#065F46] shadow-[0_0_4px_rgba(16,185,129,0.8)]"
@@ -179,7 +190,7 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
   }
 
   if (frame === 'rainbow') {
-    const outer = size + 14;
+    const inner = innerAvatarSize(size, 14);
     return (
       <div className="relative" style={{ width: outer, height: outer }}>
         <div
@@ -190,15 +201,15 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
           }}
         />
         <div className="absolute inset-[3px] rounded-full bg-card" />
-        <div className="absolute inset-[6px]">
-          <Avatar src={src} alt={alt} size={size} status={status} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Avatar src={src} alt={alt} size={inner} status={status} />
         </div>
       </div>
     );
   }
 
   if (frame === 'aurora') {
-    const outer = size + 14;
+    const inner = innerAvatarSize(size, 14);
     const auroraGradient =
       'linear-gradient(120deg, #2DD4BF, #38BDF8, #7A5AF8, #4ADE80, #2DD4BF)';
     return (
@@ -212,8 +223,8 @@ export function FramedAvatar({ frame, src, alt, size = 96, status }: FramedAvata
           style={{ background: auroraGradient, backgroundSize: '300% 300%' }}
         />
         <div className="absolute inset-[3px] rounded-full bg-card" />
-        <div className="absolute inset-[6px]">
-          <Avatar src={src} alt={alt} size={size} status={status} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Avatar src={src} alt={alt} size={inner} status={status} />
         </div>
       </div>
     );

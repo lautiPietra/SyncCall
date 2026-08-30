@@ -607,8 +607,8 @@ function MessageBubble({
       <div className={`relative flex max-w-[70%] flex-col gap-1 ${isOwn ? 'items-end' : 'items-start'}`}>
         {!message.deleted && !isEditing && (
           <div
-            className={`absolute -top-4 z-10 flex items-center gap-0.5 rounded-full border border-surface-border/60 bg-card px-1 py-0.5 shadow-lg transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 ${
-              isOwn ? 'right-0' : 'left-0'
+            className={`relative z-10 mb-1 flex items-center gap-0.5 rounded-full border border-surface-border/60 bg-card px-1 py-0.5 shadow-lg transition-opacity sm:absolute sm:-top-4 sm:mb-0 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 ${
+              isOwn ? 'sm:right-0' : 'sm:left-0'
             }`}
           >
             <BubbleIconButton label="Reaccionar" onClick={onToggleReactionPicker}>

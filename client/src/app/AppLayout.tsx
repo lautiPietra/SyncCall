@@ -247,7 +247,7 @@ export function AppLayout() {
                             frame={friend.avatarFrame}
                             src={friend.avatarUrl}
                             alt={friend.displayName}
-                            size={28}
+                            size={36}
                             status={getEffectiveStatus(friend.status, friend.isOnline)}
                           />
                           <span className={`truncate flex-1 ${conv.unreadCount > 0 || friend.nameplate !== 'none' ? 'font-semibold text-white' : ''}`}>
