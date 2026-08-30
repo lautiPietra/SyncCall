@@ -18,7 +18,23 @@ import { groupsRouter } from './features/groups/groups.routes';
 export function createApp(): Express {
   const app = express();
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          'img-src': [
+            "'self'",
+            'data:',
+            'https://lh3.googleusercontent.com',
+            'https://avatars.githubusercontent.com',
+            'https://res.cloudinary.com',
+            'https://ui-avatars.com',
+          ],
+        },
+      },
+    }),
+  );
   app.use(cors({ origin: config.clientOrigin, credentials: true }));
   app.use(express.json());
   app.use(cookieParser());
