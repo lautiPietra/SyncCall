@@ -1,3 +1,4 @@
+import path from 'node:path';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -35,6 +36,18 @@ export function createApp(): Express {
   app.use('/api/friends', friendsRouter);
   app.use('/api/conversations', conversationsRouter);
   app.use('/api/groups', groupsRouter);
+
+  if (config.nodeEnv === 'production') {
+    const clientDistPath = path.join(__dirname, '../../client/dist');
+    app.use(express.static(clientDistPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(clientDistPath, 'index.html'));
+    });
+  }
 
   app.use(notFoundHandler);
   app.use(errorHandler);
