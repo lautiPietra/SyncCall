@@ -91,8 +91,6 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <GroupIconRail />
-
       {mobileNavOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/60 lg:hidden"
@@ -100,11 +98,14 @@ export function AppLayout() {
         />
       )}
 
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[280px] shrink-0 flex-col border-r border-surface-border/60 bg-sidebar transition-transform duration-200 ease-out lg:static lg:w-[350px] lg:translate-x-0 ${
+      <div
+        className={`fixed inset-y-0 left-0 z-40 flex shrink-0 transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
           mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
+        <GroupIconRail />
+
+        <aside className="flex w-[280px] shrink-0 flex-col border-r border-surface-border/60 bg-sidebar lg:w-[350px]">
         <Link
           to="/"
           onClick={() => setMobileNavOpen(false)}
@@ -313,7 +314,8 @@ export function AppLayout() {
             <LogoutIcon />
           </button>
         </div>
-      </aside>
+        </aside>
+      </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-3 border-b border-surface-border/60 bg-sidebar px-4 py-3 lg:hidden">
