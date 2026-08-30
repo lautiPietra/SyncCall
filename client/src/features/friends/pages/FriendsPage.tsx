@@ -100,33 +100,35 @@ export function FriendsPage() {
   return (
     <div className="flex min-h-full flex-col lg:flex-row">
       <div className="min-w-0 flex-1 bg-card px-6 py-8">
-        <div className="flex flex-wrap items-center gap-2 border-b border-surface-border/60 pb-4">
-          <FriendsGroupIcon className="mr-1 hidden text-text-description sm:block" />
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-1.5">
-            <TabButton active={tab === 'all'} onClick={() => setTab('all')}>
-              Todos
-            </TabButton>
-            <TabButton active={tab === 'online'} onClick={() => setTab('online')}>
-              En línea
-            </TabButton>
-            <TabButton active={tab === 'pending'} onClick={() => setTab('pending')}>
-              Pendientes
-              <CountBadge count={pendingCount} className="ml-1.5 px-2 py-0.5 text-xs" />
-            </TabButton>
-            <button
-              type="button"
-              onClick={() => setTab('add')}
-              className={`flex items-center justify-center rounded-md px-4 py-2 text-base font-medium transition-colors sm:ml-1.5 ${
-                tab === 'add' ? 'bg-primary-active text-white' : 'bg-status-online text-white hover:brightness-110'
-              }`}
-            >
-              Añadir amigo
-            </button>
+        <div className="border-b border-surface-border/60 pb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <FriendsGroupIcon className="mr-1 hidden text-text-description sm:block" />
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-1.5">
+              <TabButton active={tab === 'all'} onClick={() => setTab('all')}>
+                Todos
+              </TabButton>
+              <TabButton active={tab === 'online'} onClick={() => setTab('online')}>
+                En línea
+              </TabButton>
+              <TabButton active={tab === 'pending'} onClick={() => setTab('pending')}>
+                Pendientes
+                <CountBadge count={pendingCount} className="ml-1.5 px-2 py-0.5 text-xs" />
+              </TabButton>
+              <button
+                type="button"
+                onClick={() => setTab('add')}
+                className={`flex items-center justify-center rounded-md px-4 py-2 text-base font-medium transition-colors sm:ml-1.5 ${
+                  tab === 'add' ? 'bg-primary-active text-white' : 'bg-status-online text-white hover:brightness-110'
+                }`}
+              >
+                Añadir amigo
+              </button>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => setShowActiveMobile((v) => !v)}
-            className={`ml-auto flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors lg:hidden ${
+            className={`mt-2 flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors lg:hidden ${
               showActiveMobile ? 'bg-surface-hover text-white' : 'text-text-description hover:bg-surface-hover/60 hover:text-white'
             }`}
           >
